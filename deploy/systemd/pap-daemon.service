@@ -1,0 +1,19 @@
+[Unit]
+Description=PiAudioPlumber Daemon
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/piaudioplumber
+Environment=PAP_HOST=0.0.0.0
+Environment=PAP_PORT=7070
+Environment=PAP_LOG_LEVEL=INFO
+ExecStart=%h/piaudioplumber/.venv/bin/pap-daemon
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,171 @@
+[
+  {
+    "id": 0,
+    "type": "PipeWire:Interface:Core",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "cookie": 12345,
+      "user-name": "user",
+      "host-name": "raspberrypi",
+      "version": "1.4.2",
+      "name": "pipewire-0",
+      "change-mask": 31,
+      "props": {}
+    }
+  },
+  {
+    "id": 32,
+    "type": "PipeWire:Interface:Device",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "change-mask": 31,
+      "props": {
+        "device.name": "alsa_card.usb-Generic_USB_Audio_Interface",
+        "device.description": "USB Audio Interface",
+        "device.product.name": "USB Audio Interface",
+        "media.class": "Audio/Device",
+        "alsa.card.name": "USB Audio Interface"
+      }
+    }
+  },
+  {
+    "id": 33,
+    "type": "PipeWire:Interface:Device",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "change-mask": 31,
+      "props": {
+        "device.name": "alsa_card.usb-Generic_USB_SPDIF_Receiver",
+        "device.description": "USB SPDIF Receiver",
+        "media.class": "Audio/Device"
+      }
+    }
+  },
+  {
+    "id": 40,
+    "type": "PipeWire:Interface:Node",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "max-input-ports": 0,
+      "max-output-ports": 64,
+      "change-mask": 30,
+      "n-input-ports": 0,
+      "n-output-ports": 2,
+      "state": "idle",
+      "error": null,
+      "props": {
+        "node.name": "alsa_output.usb-Generic_USB_Audio_Interface-00.analog-stereo",
+        "node.description": "USB Audio Interface Analog Stereo",
+        "media.class": "Audio/Sink",
+        "device.id": "32",
+        "api.alsa.card": "1"
+      }
+    }
+  },
+  {
+    "id": 41,
+    "type": "PipeWire:Interface:Node",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "max-input-ports": 64,
+      "max-output-ports": 0,
+      "change-mask": 30,
+      "n-input-ports": 2,
+      "n-output-ports": 0,
+      "state": "idle",
+      "error": null,
+      "props": {
+        "node.name": "alsa_input.usb-Generic_USB_Audio_Interface-00.analog-stereo",
+        "node.description": "USB Audio Interface Analog Stereo",
+        "media.class": "Audio/Source",
+        "device.id": "32"
+      }
+    }
+  },
+  {
+    "id": 42,
+    "type": "PipeWire:Interface:Node",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "max-input-ports": 64,
+      "max-output-ports": 0,
+      "change-mask": 30,
+      "n-input-ports": 2,
+      "n-output-ports": 0,
+      "state": "idle",
+      "error": null,
+      "props": {
+        "node.name": "alsa_input.usb-Generic_USB_SPDIF_Receiver-00.iec958-stereo",
+        "node.description": "USB SPDIF Receiver IEC958 Stereo",
+        "media.class": "Audio/Source",
+        "device.id": "33"
+      }
+    }
+  },
+  {
+    "id": 50,
+    "type": "PipeWire:Interface:Node",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "max-input-ports": 64,
+      "max-output-ports": 0,
+      "change-mask": 30,
+      "n-input-ports": 2,
+      "n-output-ports": 0,
+      "state": "running",
+      "error": null,
+      "props": {
+        "node.name": "shairport-sync",
+        "node.description": "AirPlay Receiver",
+        "media.class": "Stream/Input/Audio",
+        "application.name": "shairport-sync",
+        "application.process.id": "1234"
+      }
+    }
+  },
+  {
+    "id": 60,
+    "type": "PipeWire:Interface:Node",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "max-input-ports": 64,
+      "max-output-ports": 0,
+      "change-mask": 30,
+      "n-input-ports": 2,
+      "n-output-ports": 0,
+      "state": "idle",
+      "error": null,
+      "props": {
+        "node.name": "example-audio-client",
+        "node.description": "Example Audio Client",
+        "media.class": "Stream/Input/Audio",
+        "application.name": "example-app",
+        "application.process.id": "5678"
+      }
+    }
+  },
+  {
+    "id": 70,
+    "type": "PipeWire:Interface:Link",
+    "version": 3,
+    "permissions": ["r", "w", "x", "m"],
+    "info": {
+      "output-node-id": 50,
+      "output-port-id": 100,
+      "input-node-id": 40,
+      "input-port-id": 200,
+      "change-mask": 7,
+      "state": "active",
+      "error": null,
+      "props": {}
+    }
+  }
+]

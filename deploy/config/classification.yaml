@@ -1,0 +1,65 @@
+# Classification rules: map PipeWire nodes to user-facing source identities.
+# Rules are evaluated in order; first match wins.
+# Unmatched nodes appear as "Unknown App <id>".
+#
+# Match fields (any combination, all must match):
+#   node_name_contains:   substring of node.name
+#   app_name:             exact application.name
+#   media_class:          exact media.class
+#   device_name_contains: substring of device.name (via device props)
+#   node_description_contains: substring of node.description
+#
+# Result fields:
+#   label:  display name
+#   kind:   hardware_input | hardware_output | software_source | software_sink | virtual
+
+rules:
+  - match:
+      node_name_contains: "Cubilux"
+    result:
+      label: "TV SPDIF"
+      kind: hardware_input
+
+  - match:
+      node_name_contains: "Scarlett_Solo_USB"
+      media_class: "Audio/Sink"
+    result:
+      label: "Scarlett Solo (Output)"
+      kind: hardware_output
+
+  - match:
+      node_name_contains: "Scarlett_Solo_USB"
+      media_class: "Audio/Source"
+    result:
+      label: "Scarlett Solo (Input)"
+      kind: hardware_input
+
+  - match:
+      app_name: "shairport-sync"
+    result:
+      label: "AirPlay"
+      kind: software_source
+
+  - match:
+      app_name: "sendspin"
+    result:
+      label: "Sendspin"
+      kind: software_source
+
+  - match:
+      app_name: "Music Assistant"
+    result:
+      label: "Music Assistant"
+      kind: software_source
+
+  - match:
+      app_name: "spotify"
+    result:
+      label: "Spotify Connect"
+      kind: software_source
+
+  - match:
+      app_name: "plexamp"
+    result:
+      label: "Plex"
+      kind: software_source

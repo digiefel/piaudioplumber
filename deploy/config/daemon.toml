@@ -1,0 +1,9 @@
+[daemon]
+host = "0.0.0.0"
+port = 7070
+log_level = "INFO"
+
+[pipewire]
+# Override PIPEWIRE_RUNTIME_DIR if daemon runs as a different user than PipeWire.
+# Leave empty to use the default from the environment.
+runtime_dir = ""

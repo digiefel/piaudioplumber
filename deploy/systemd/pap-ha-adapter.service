@@ -1,0 +1,20 @@
+[Unit]
+Description=PiAudioPlumber Home Assistant Adapter
+After=pap-daemon.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/piaudioplumber
+Environment=PAP_DAEMON_URL=ws://localhost:7070
+Environment=MQTT_HOST=localhost
+Environment=MQTT_PORT=1883
+EnvironmentFile=-%h/.config/pap/ha-adapter.env
+ExecStart=%h/piaudioplumber/.venv/bin/pap-ha-adapter
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

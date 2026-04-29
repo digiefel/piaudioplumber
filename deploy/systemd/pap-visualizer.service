@@ -1,0 +1,13 @@
+[Unit]
+Description=PiAudioPlumber Visualizer (placeholder)
+After=pap-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep infinity
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
