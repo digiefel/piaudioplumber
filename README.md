@@ -15,6 +15,7 @@ Audio sources → PipeWire/WirePlumber → speakers. This daemon is an observer/
 - Linux with PipeWire 1.0+ and WirePlumber 0.5+
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
+- Node.js 18+ and npm (for the web UI build)
 
 ## Install
 
