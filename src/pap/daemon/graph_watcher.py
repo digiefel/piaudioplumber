@@ -6,7 +6,7 @@ import logging
 from typing import Callable
 
 from pap.model.graph import GraphObject
-from pap.pw.dump import pw_dump_stream
+from pap.pw.dump import DumpReset, pw_dump_stream
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +48,14 @@ class GraphWatcher:
 
     async def _run(self) -> None:
         async for update in pw_dump_stream(pipewire_runtime_dir=self._pipewire_runtime_dir):
-            if isinstance(update, list):
-                # Initial full dump — reset state then apply all objects
-                logger.info("Initial dump received: %d objects", len(update))
+            if isinstance(update, DumpReset):
+                logger.info("pw-dump connected — resetting graph state")
                 self._on_reset()
-                self._initial_received = True
-                for obj in update:
-                    self._handle_object(obj)
+                self._initial_received = False
             else:
+                if not self._initial_received:
+                    self._initial_received = True
+                    logger.info("First object received from initial dump")
                 self._handle_object(update)
 
     def _handle_object(self, obj: GraphObject) -> None:

@@ -2,7 +2,8 @@
 
 Parses the streaming JSON output into GraphObject events. pw-dump emits:
   - On startup: a JSON array of all current objects
-  - On each change: a single JSON object (update or removal)
+  - On each change: either a single JSON object OR a 1-element JSON array
+    (the array form is used by PipeWire 1.x for incremental updates)
 
 Removal is indicated by type=null or info=null at the top level.
 """
@@ -15,6 +16,13 @@ import os
 from collections.abc import AsyncIterator
 
 from pap.model.graph import Graph, GraphObject, PipeWireType
+
+
+class DumpReset:
+    """Sentinel yielded by pw_dump_stream before each new pw-dump process.
+
+    Signals graph_watcher to reset all state before replaying the initial dump.
+    """
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +104,16 @@ def _is_removal(raw: dict) -> bool:
 async def pw_dump_stream(
     *,
     pipewire_runtime_dir: str | None = None,
-) -> AsyncIterator[GraphObject | list[GraphObject]]:
+) -> AsyncIterator[DumpReset | GraphObject]:
     """Yield GraphObjects from `pw-dump --monitor` with auto-reconnect.
 
     Yields:
-        list[GraphObject] on the initial full dump
-        GraphObject for each incremental update/removal after that
+        DumpReset before each new pw-dump process (signal to clear state)
+        GraphObject for every object in the initial dump and each incremental update
+
+    PipeWire 1.x emits both the initial state and incremental updates as JSON
+    arrays (the initial dump is large; incremental updates are 1-element arrays).
+    All arrays are flattened into individual GraphObject yields.
 
     Reconnects with exponential backoff if the process exits.
     """
@@ -124,6 +136,9 @@ async def pw_dump_stream(
             delay = _BASE_RECONNECT_DELAY
             parser = JsonStreamParser()
 
+            # Signal to consumers that this is a fresh connection: clear state
+            yield DumpReset()
+
             assert proc.stdout is not None
             async for chunk in _read_chunks(proc.stdout):
                 for json_str in parser.feed(chunk):
@@ -133,21 +148,18 @@ async def pw_dump_stream(
                         logger.debug("JSON parse error on: %s…", json_str[:120])
                         continue
 
-                    if isinstance(raw, list):
-                        # Initial full dump
-                        objects = []
-                        for item in raw:
-                            obj = _parse_raw_object(item)
-                            if obj:
-                                objects.append(obj)
-                        yield objects
-                    elif isinstance(raw, dict):
-                        obj = _parse_raw_object(raw)
+                    items: list[dict] = raw if isinstance(raw, list) else [raw]
+                    for item in items:
+                        obj = _parse_raw_object(item)
                         if obj:
                             yield obj
 
             await proc.wait()
-            logger.warning("pw-dump exited (returncode=%s), reconnecting in %.1fs", proc.returncode, delay)
+            logger.warning(
+                "pw-dump exited (returncode=%s), reconnecting in %.1fs",
+                proc.returncode,
+                delay,
+            )
 
         except FileNotFoundError:
             logger.error("pw-dump not found — is PipeWire installed?")
@@ -190,6 +202,7 @@ async def take_initial_snapshot() -> Graph:
 
 
 __all__ = [
+    "DumpReset",
     "JsonStreamParser",
     "pw_dump_stream",
     "take_initial_snapshot",
