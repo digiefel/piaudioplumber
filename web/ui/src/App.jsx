@@ -228,8 +228,8 @@ function GraphCanvas() {
         onClick={() => { localStorage.removeItem(LS_KEY); setNodes(flowNodes); }}
         style={{
           position: "absolute",
-          top: 16,
-          right: 80,
+          top: 56,
+          left: 16,
           zIndex: 10,
           background: "#1a1a24",
           border: "1px solid #333",
