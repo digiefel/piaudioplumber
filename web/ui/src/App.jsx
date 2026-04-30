@@ -20,31 +20,66 @@ const NODE_TYPES = { pwNode: NodeBlock };
 const NODE_WIDTH  = 220;
 const NODE_HEIGHT = 90;
 const LS_KEY      = "pap:node-positions";
+const COL_PITCH   = NODE_WIDTH + 160;  // 380px column pitch for isolated grid
+const ROW_PITCH   = NODE_HEIGHT + 60;  // 150px row pitch
+
+function mediaClassBucket(n) {
+  const mc = n.media_class || "";
+  if (mc.startsWith("Audio/Source") || mc.startsWith("Stream/Output")) return 0;
+  if (mc.startsWith("Stream/Input")) return 1;
+  if (mc.startsWith("Audio/Sink")) return 2;
+  return 3;
+}
 
 function autoLayout(nodes, links) {
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 160, marginx: 60, marginy: 60 });
+  const validLinks = links.filter(
+    (l) => l.output_node_id != null && l.input_node_id != null
+  );
 
-  nodes.forEach((n) => g.setNode(String(n.id), { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  // Split: nodes with at least one link vs fully isolated
+  const linkedIds = new Set();
+  validLinks.forEach((l) => {
+    linkedIds.add(String(l.output_node_id));
+    linkedIds.add(String(l.input_node_id));
+  });
+  const connected = nodes.filter((n) => linkedIds.has(String(n.id)));
+  const isolated  = nodes.filter((n) => !linkedIds.has(String(n.id)));
 
-  links
-    .filter((l) => l.output_node_id != null && l.input_node_id != null)
-    .forEach((l) => {
+  const positioned = [];
+
+  // Dagre for connected subgraph — respects actual signal-flow topology
+  if (connected.length > 0) {
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 160, marginx: 60, marginy: 60 });
+    connected.forEach((n) => g.setNode(String(n.id), { width: NODE_WIDTH, height: NODE_HEIGHT }));
+    validLinks.forEach((l) => {
       if (g.hasNode(String(l.output_node_id)) && g.hasNode(String(l.input_node_id)))
         g.setEdge(String(l.output_node_id), String(l.input_node_id));
     });
+    dagre.layout(g);
+    connected.forEach((n) => {
+      const pos = g.node(String(n.id));
+      positioned.push({ ...n, _x: pos.x - NODE_WIDTH / 2, _y: pos.y - NODE_HEIGHT / 2 });
+    });
+  }
 
-  dagre.layout(g);
+  // Media_class column grid for isolated nodes, to the right of the dagre section
+  const connectedMaxX = positioned.reduce((m, n) => Math.max(m, n._x + NODE_WIDTH), -1);
+  const gridStartX = connected.length > 0 ? connectedMaxX + 120 : 60;
 
-  return nodes.map((n) => {
-    const pos = g.node(String(n.id));
-    return {
-      ...n,
-      _x: pos ? pos.x - NODE_WIDTH  / 2 : 60,
-      _y: pos ? pos.y - NODE_HEIGHT / 2 : 60,
-    };
+  const buckets = [[], [], [], []];
+  isolated.forEach((n) => buckets[mediaClassBucket(n)].push(n));
+  let colIdx = 0;
+  buckets.forEach((bucket) => {
+    if (bucket.length === 0) return;
+    bucket.forEach((n, i) => {
+      positioned.push({ ...n, _x: gridStartX + colIdx * COL_PITCH, _y: 60 + i * ROW_PITCH });
+    });
+    colIdx++;
   });
+
+  return positioned;
 }
 
 function buildFlowNodes(graphNodes, graphLinks, onSelect) {
