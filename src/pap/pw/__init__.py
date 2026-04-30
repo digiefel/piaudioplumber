@@ -1,6 +1,6 @@
 from pap.pw.dump import JsonStreamParser, pw_dump_stream, take_initial_snapshot
 from pap.pw.metadata import MetadataItem, get_default_sink_id, get_metadata
-from pap.pw.pwlink import link_nodes, list_links, unlink_nodes
+from pap.pw.pwlink import link_nodes, list_links, unlink_nodes, unlink_ports
 from pap.pw.wpctl import VolumeInfo, get_volume, set_default, set_mute, set_volume, status
 
 __all__ = [
@@ -19,4 +19,5 @@ __all__ = [
     "status",
     "take_initial_snapshot",
     "unlink_nodes",
+    "unlink_ports",
 ]

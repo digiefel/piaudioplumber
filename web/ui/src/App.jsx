@@ -166,6 +166,30 @@ function GraphCanvas() {
     [onNodesChange]
   );
 
+  // Create a PipeWire link when user draws an edge
+  const onConnect = useCallback(
+    (connection) => {
+      sendCommand({
+        cmd: "link_nodes",
+        output_node_id: parseInt(connection.source),
+        input_node_id: parseInt(connection.target),
+      });
+      // Don't add to React state — wait for the pw-dump event to confirm
+    },
+    [sendCommand]
+  );
+
+  // Delete a PipeWire link when user removes an edge (select + Delete key)
+  const handleEdgesChange = useCallback(
+    (changes) => {
+      changes
+        .filter((c) => c.type === "remove")
+        .forEach((c) => sendCommand({ cmd: "unlink_nodes", link_id: parseInt(c.id) }));
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, sendCommand]
+  );
+
   const handleVolume = useCallback(
     (v) => sendCommand({ cmd: "set_volume", volume: v }),
     [sendCommand]
@@ -181,7 +205,8 @@ function GraphCanvas() {
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={handleEdgesChange}
+        onConnect={onConnect}
         nodeTypes={NODE_TYPES}
         fitView
         colorMode="dark"

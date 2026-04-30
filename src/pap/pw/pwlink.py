@@ -51,10 +51,20 @@ async def unlink_nodes(
     return code == 0
 
 
+async def unlink_ports(output_port_id: int, input_port_id: int) -> bool:
+    """Destroy a specific link by port IDs. More precise than unlink_nodes."""
+    code, _, err = await _run(
+        ["pw-link", "-d", "-I", str(output_port_id), str(input_port_id)]
+    )
+    if code != 0:
+        logger.warning("pw-link -d -I failed: %s", err)
+    return code == 0
+
+
 async def list_links() -> str:
     """Return raw pw-link --list-links output for diagnostics."""
     _, out, _ = await _run(["pw-link", "--list-links"])
     return out
 
 
-__all__ = ["link_nodes", "unlink_nodes", "list_links"]
+__all__ = ["link_nodes", "unlink_nodes", "unlink_ports", "list_links"]

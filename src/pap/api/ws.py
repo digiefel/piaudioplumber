@@ -20,6 +20,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pap.daemon.control import AudioControl
 from pap.daemon.state_store import StateStore
 from pap.model.events import serialize_event
+from pap.pw import pwlink
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,28 @@ class WSManager:
             muted = bool(msg.get("muted", False))
             ok = await self._control.set_master_mute(muted)
             await ws.send_text(json.dumps({"type": "cmd_result", "cmd": cmd, "ok": ok}))
+        elif cmd == "link_nodes":
+            output_node_id = msg.get("output_node_id")
+            input_node_id = msg.get("input_node_id")
+            if output_node_id is not None and input_node_id is not None:
+                ok = await pwlink.link_nodes(int(output_node_id), int(input_node_id))
+                await ws.send_text(json.dumps({"type": "cmd_result", "cmd": cmd, "ok": ok}))
+        elif cmd == "unlink_nodes":
+            link_id = msg.get("link_id")
+            if link_id is not None:
+                link_obj = self._store.graph.objects.get(int(link_id))
+                ok = False
+                if link_obj and isinstance(link_obj.info, dict):
+                    out_port = link_obj.info.get("output-port-id")
+                    in_port = link_obj.info.get("input-port-id")
+                    if out_port is not None and in_port is not None:
+                        ok = await pwlink.unlink_ports(int(out_port), int(in_port))
+                    else:
+                        out_node = link_obj.link_output_node_id
+                        in_node = link_obj.link_input_node_id
+                        if out_node is not None and in_node is not None:
+                            ok = await pwlink.unlink_nodes(out_node, in_node)
+                await ws.send_text(json.dumps({"type": "cmd_result", "cmd": cmd, "ok": ok}))
         else:
             logger.debug("Unknown WS command: %s", cmd)
 
