@@ -136,7 +136,7 @@ function GraphCanvas() {
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync when graph changes; priority: localStorage > in-memory drag > dagre
+  // Sync nodes — priority: localStorage > in-memory drag > dagre
   useMemo(() => {
     const saved = loadSavedPositions();
     setNodes((prev) => {
@@ -147,8 +147,12 @@ function GraphCanvas() {
         position: saved[n.id] ?? liveMap[n.id] ?? n.position,
       }));
     });
+  }, [flowNodes]);
+
+  // Sync edges separately — decoupled from node updates to avoid race conditions
+  useMemo(() => {
     setEdges(flowEdges);
-  }, [flowNodes, flowEdges]);
+  }, [flowEdges]);
 
   // Persist drag-end positions to localStorage
   const handleNodesChange = useCallback(
@@ -174,9 +178,12 @@ function GraphCanvas() {
         output_node_id: parseInt(connection.source),
         input_node_id: parseInt(connection.target),
       });
-      // Don't add to React state — wait for the pw-dump event to confirm
+      // Show edge immediately; PipeWire event will replace it with the real one
+      setEdges((eds) =>
+        addEdge({ ...connection, style: { stroke: "#888", strokeWidth: 1 } }, eds)
+      );
     },
-    [sendCommand]
+    [sendCommand, setEdges]
   );
 
   // Delete a PipeWire link when user removes an edge (select + Delete key)
