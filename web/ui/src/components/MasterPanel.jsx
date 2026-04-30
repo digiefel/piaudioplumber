@@ -1,19 +1,31 @@
 import { useEffect, useState } from "react";
 
 /**
- * MasterPanel — floating volume/mute control and connection status.
+ * MasterPanel — floating volume/mute control.
+ * Default: controls the system default sink ("Master").
+ * When a node is selected: switches accent + commands route to that node.
  */
-export function MasterPanel({ master, status, onVolume, onMute }) {
+export function MasterPanel({ master, selectedNode, status, onVolume, onMute }) {
+  const isNodeMode = selectedNode != null;
+  const accent = isNodeMode ? "#facc15" : "#4ade80";
+  const titleLabel = isNodeMode ? "Selected" : "Master";
   const statusColor = status === "connected" ? "#4ade80" : status === "connecting" ? "#facc15" : "#f87171";
 
-  // Local slider value for instant visual feedback; only fires command on release
-  const [localVolume, setLocalVolume] = useState(Math.round((master.volume || 0) * 100));
-
-  // Sync from PipeWire events (but don't override while dragging)
+  // Local slider value for instant visual feedback; only fires command on release.
+  // When selection changes, snap the slider to whatever baseline we have (master.volume
+  // as fallback — per-node volume tracking is a follow-on).
+  const baseline = master.volume ?? 0;
+  const [localVolume, setLocalVolume] = useState(Math.round(baseline * 100));
   const [dragging, setDragging] = useState(false);
+
   useEffect(() => {
     if (!dragging) setLocalVolume(Math.round((master.volume || 0) * 100));
-  }, [master.volume, dragging]);
+    // re-sync when the selected node changes too — slider resets to known baseline
+    // intentionally not in deps to avoid jitter mid-drag
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [master.volume, dragging, selectedNode?.id]);
+
+  const muted = isNodeMode ? false : master.muted;
 
   return (
     <div
@@ -23,20 +35,29 @@ export function MasterPanel({ master, status, onVolume, onMute }) {
         right: 16,
         zIndex: 10,
         background: "#1a1a24",
-        border: "1px solid #333",
+        border: `1px solid ${isNodeMode ? accent + "88" : "#333"}`,
         borderRadius: 10,
         padding: "12px 16px",
-        minWidth: 220,
+        minWidth: 240,
         color: "#e8e8ec",
         fontFamily: "system-ui, sans-serif",
-        boxShadow: "0 4px 20px #0008",
+        boxShadow: isNodeMode ? `0 0 0 1px ${accent}33, 0 4px 24px ${accent}33` : "0 4px 20px #0008",
+        transition: "border-color 120ms, box-shadow 120ms",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, display: "inline-block" }} />
         <span style={{ fontSize: 12, color: "#888", textTransform: "capitalize" }}>{status}</span>
-        <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700 }}>Master</span>
+        <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: isNodeMode ? accent : "#e8e8ec" }}>
+          {titleLabel}
+        </span>
       </div>
+
+      {isNodeMode && (
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#ccc", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+          → {selectedNode.description || selectedNode.name || `Node ${selectedNode.id}`}
+        </div>
+      )}
 
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -50,18 +71,18 @@ export function MasterPanel({ master, status, onVolume, onMute }) {
           value={localVolume}
           onChange={(e) => { setDragging(true); setLocalVolume(parseInt(e.target.value)); }}
           onPointerUp={(e) => { setDragging(false); onVolume(parseInt(e.target.value) / 100); }}
-          style={{ width: "100%", accentColor: "#4ade80" }}
+          style={{ width: "100%", accentColor: accent }}
         />
       </div>
 
       <button
-        onClick={() => onMute(!master.muted)}
+        onClick={() => onMute(!muted)}
         style={{
           width: "100%",
           padding: "6px 0",
-          background: master.muted ? "#7f1d1d" : "#1f3d2f",
-          color: master.muted ? "#fca5a5" : "#86efac",
-          border: `1px solid ${master.muted ? "#ef4444" : "#22c55e"}`,
+          background: muted ? "#7f1d1d" : (isNodeMode ? "#3d3520" : "#1f3d2f"),
+          color: muted ? "#fca5a5" : (isNodeMode ? accent : "#86efac"),
+          border: `1px solid ${muted ? "#ef4444" : (isNodeMode ? accent : "#22c55e")}`,
           borderRadius: 6,
           cursor: "pointer",
           fontSize: 12,
@@ -70,10 +91,10 @@ export function MasterPanel({ master, status, onVolume, onMute }) {
           textTransform: "uppercase",
         }}
       >
-        {master.muted ? "Muted" : "Unmuted"}
+        {muted ? "Muted" : "Unmuted"}
       </button>
 
-      {master.sink_name && (
+      {!isNodeMode && master.sink_name && (
         <div style={{ marginTop: 8, fontSize: 10, color: "#555", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
           sink: {master.sink_name}
         </div>

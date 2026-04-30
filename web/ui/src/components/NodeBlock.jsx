@@ -11,11 +11,14 @@ const CLASS_COLORS = {
   "Stream/Output/Audio": "#7a4b2d",
 };
 
-export function NodeBlock({ data }) {
+export function NodeBlock({ data, selected }) {
   const { node } = data;
   const isRunning = node.is_running;
   const bg = CLASS_COLORS[node.media_class] || "#2a2a35";
-  const borderColor = isRunning ? "#4ade80" : "#444";
+  const borderColor = selected ? "#facc15" : (isRunning ? "#4ade80" : "#444");
+  const boxShadow = selected
+    ? "0 0 0 2px #facc1599, 0 0 18px #facc1577"
+    : (isRunning ? `0 0 12px ${borderColor}44` : "none");
 
   return (
     <div
@@ -29,7 +32,8 @@ export function NodeBlock({ data }) {
         color: "#e8e8ec",
         fontFamily: "system-ui, sans-serif",
         fontSize: 12,
-        boxShadow: isRunning ? `0 0 12px ${borderColor}44` : "none",
+        boxShadow,
+        transition: "box-shadow 120ms, border-color 120ms",
       }}
       onClick={() => data.onSelect?.(node)}
     >

@@ -40,5 +40,14 @@ class AudioControl:
                 self._store.update_master_volume(info.volume, info.muted)
         return ok
 
+    async def set_node_volume(self, node_id: int, volume: float) -> bool:
+        """Set a specific node's volume (0.0 – 1.5)."""
+        volume = max(0.0, min(1.5, volume))
+        return await set_volume(volume, target=str(node_id))
+
+    async def set_node_mute(self, node_id: int, muted: bool) -> bool:
+        """Set a specific node's mute state."""
+        return await set_mute(muted, target=str(node_id))
+
 
 __all__ = ["AudioControl"]

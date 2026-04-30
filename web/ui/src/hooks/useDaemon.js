@@ -45,10 +45,12 @@ export function useDaemon() {
       if (kind === "object_added") {
         const obj = msg.obj;
         if (!obj) return;
-        if (obj.type === "PipeWire:Interface:Node") {
-          setGraph((g) => ({ ...g, nodes: [...g.nodes.filter((n) => n.id !== obj.id), normalizeNode(obj)] }));
-        } else if (obj.type === "PipeWire:Interface:Link") {
-          setGraph((g) => ({ ...g, links: [...g.links.filter((l) => l.id !== obj.id), obj] }));
+        if (isNodeObj(obj)) {
+          const norm = normalizeNode(obj);
+          setGraph((g) => ({ ...g, nodes: [...g.nodes.filter((n) => n.id !== obj.id), norm] }));
+        } else if (isLinkObj(obj)) {
+          const norm = normalizeLink(obj);
+          setGraph((g) => ({ ...g, links: [...g.links.filter((l) => l.id !== obj.id), norm] }));
         }
         return;
       }
@@ -56,10 +58,17 @@ export function useDaemon() {
       if (kind === "object_changed") {
         const obj = msg.obj;
         if (!obj) return;
-        if (obj.type === "PipeWire:Interface:Node") {
+        if (isNodeObj(obj)) {
+          const norm = normalizeNode(obj);
           setGraph((g) => ({
             ...g,
-            nodes: g.nodes.map((n) => (n.id === obj.id ? { ...n, ...normalizeNode(obj) } : n)),
+            nodes: g.nodes.map((n) => (n.id === obj.id ? { ...n, ...norm } : n)),
+          }));
+        } else if (isLinkObj(obj)) {
+          const norm = normalizeLink(obj);
+          setGraph((g) => ({
+            ...g,
+            links: g.links.map((l) => (l.id === obj.id ? { ...l, ...norm } : l)),
           }));
         }
         return;
@@ -112,7 +121,21 @@ export function useDaemon() {
   return { graph, master, status, sendCommand };
 }
 
+// Object discriminators — work for both normalized snapshot shape and raw GraphObject
+function isNodeObj(obj) {
+  return obj.type === "PipeWire:Interface:Node" || obj.is_running !== undefined;
+}
+function isLinkObj(obj) {
+  return obj.type === "PipeWire:Interface:Link" ||
+         obj.output_node_id !== undefined ||
+         (obj.info && obj.info["output-node-id"] !== undefined);
+}
+
 function normalizeNode(obj) {
+  // If already in snapshot/event shape, pass through
+  if (obj.is_running !== undefined && obj.media_class !== undefined) {
+    return obj;
+  }
   const info = obj.info || {};
   const props = info.props || obj.props || {};
   return {
@@ -125,5 +148,19 @@ function normalizeNode(obj) {
     is_running: (info.state || obj.state) === "running",
     type: obj.type,
     props,
+  };
+}
+
+function normalizeLink(obj) {
+  // If already flat (snapshot/normalized event), pass through
+  if (obj.output_node_id !== undefined) {
+    return obj;
+  }
+  const info = obj.info || {};
+  return {
+    id: obj.id,
+    output_node_id: info["output-node-id"] ?? null,
+    input_node_id: info["input-node-id"] ?? null,
+    state: info.state ?? null,
   };
 }

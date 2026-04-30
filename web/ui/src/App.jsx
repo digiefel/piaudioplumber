@@ -82,13 +82,26 @@ function autoLayout(nodes, links) {
   return positioned;
 }
 
+function isNodeActive(node, links) {
+  if (!node.is_running) return false;
+  return links.some(
+    (l) =>
+      l.state === "active" &&
+      (l.output_node_id === node.id || l.input_node_id === node.id)
+  );
+}
+
 function buildFlowNodes(graphNodes, graphLinks, onSelect) {
   const laid = autoLayout(graphNodes, graphLinks);
   return laid.map((n) => ({
     id: String(n.id),
     type: "pwNode",
     position: { x: n._x, y: n._y },
-    data: { node: n, onSelect },
+    data: {
+      node: n,
+      onSelect,
+      isActive: isNodeActive(n, graphLinks),
+    },
     draggable: true,
   }));
 }
@@ -136,8 +149,9 @@ function GraphCanvas() {
   }, []);
 
   const flowNodes = useMemo(
-    () => buildFlowNodes(graph.nodes, graph.links, handleSelect),
-    [graph.nodes, graph.links, handleSelect]
+    () => buildFlowNodes(graph.nodes, graph.links, handleSelect)
+            .map((n) => (n.id === String(selectedNodeId) ? { ...n, selected: true } : n)),
+    [graph.nodes, graph.links, handleSelect, selectedNodeId]
   );
   const flowEdges = useMemo(() => buildFlowEdges(graph.links), [graph.links]);
 
@@ -205,13 +219,30 @@ function GraphCanvas() {
     [onEdgesChange, sendCommand]
   );
 
+  const selectedNode = useMemo(
+    () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
+    [graph.nodes, selectedNodeId]
+  );
+
   const handleVolume = useCallback(
-    (v) => sendCommand({ cmd: "set_volume", volume: v }),
-    [sendCommand]
+    (v) => {
+      if (selectedNodeId != null) {
+        sendCommand({ cmd: "set_node_volume", node_id: selectedNodeId, volume: v });
+      } else {
+        sendCommand({ cmd: "set_volume", volume: v });
+      }
+    },
+    [sendCommand, selectedNodeId]
   );
   const handleMute = useCallback(
-    (m) => sendCommand({ cmd: "set_mute", muted: m }),
-    [sendCommand]
+    (m) => {
+      if (selectedNodeId != null) {
+        sendCommand({ cmd: "set_node_mute", node_id: selectedNodeId, muted: m });
+      } else {
+        sendCommand({ cmd: "set_mute", muted: m });
+      }
+    },
+    [sendCommand, selectedNodeId]
   );
 
   return (
@@ -234,6 +265,7 @@ function GraphCanvas() {
 
       <MasterPanel
         master={master}
+        selectedNode={selectedNode}
         status={status}
         onVolume={handleVolume}
         onMute={handleMute}
