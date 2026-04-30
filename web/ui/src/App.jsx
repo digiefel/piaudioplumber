@@ -64,9 +64,9 @@ function autoLayout(nodes, links) {
     });
   }
 
-  // Media_class column grid for isolated nodes, to the right of the dagre section
-  const connectedMaxX = positioned.reduce((m, n) => Math.max(m, n._x + NODE_WIDTH), -1);
-  const gridStartX = connected.length > 0 ? connectedMaxX + 120 : 60;
+  // Media_class column grid for isolated nodes, below the dagre section
+  const connectedMaxY = positioned.reduce((m, n) => Math.max(m, n._y + NODE_HEIGHT), -1);
+  const gridStartY = connected.length > 0 ? connectedMaxY + 80 : 60;
 
   const buckets = [[], [], [], []];
   isolated.forEach((n) => buckets[mediaClassBucket(n)].push(n));
@@ -74,7 +74,7 @@ function autoLayout(nodes, links) {
   buckets.forEach((bucket) => {
     if (bucket.length === 0) return;
     bucket.forEach((n, i) => {
-      positioned.push({ ...n, _x: gridStartX + colIdx * COL_PITCH, _y: 60 + i * ROW_PITCH });
+      positioned.push({ ...n, _x: 60 + colIdx * COL_PITCH, _y: gridStartY + i * ROW_PITCH });
     });
     colIdx++;
   });
