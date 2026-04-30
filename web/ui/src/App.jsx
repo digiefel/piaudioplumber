@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -9,6 +9,7 @@ import {
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
 
 import { DiagDrawer } from "./components/DiagDrawer.jsx";
 import { MasterPanel } from "./components/MasterPanel.jsx";
@@ -16,38 +17,38 @@ import { NodeBlock } from "./components/NodeBlock.jsx";
 import { useDaemon } from "./hooks/useDaemon.js";
 
 const NODE_TYPES = { pwNode: NodeBlock };
+const NODE_WIDTH  = 220;
+const NODE_HEIGHT = 90;
+const LS_KEY      = "pap:node-positions";
 
-// Auto-layout: place nodes in a rough grid, left = sources, right = sinks
-function autoLayout(nodes) {
-  const sources = nodes.filter(
-    (n) =>
-      n.media_class?.startsWith("Audio/Source") ||
-      n.media_class?.startsWith("Stream/Output")
-  );
-  const streams = nodes.filter(
-    (n) =>
-      n.media_class?.startsWith("Stream/Input") ||
-      n.media_class?.startsWith("Stream/Output")
-  );
-  const sinks = nodes.filter((n) => n.media_class?.startsWith("Audio/Sink"));
-  const others = nodes.filter(
-    (n) => !sources.includes(n) && !streams.includes(n) && !sinks.includes(n)
-  );
+function autoLayout(nodes, links) {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 160, marginx: 60, marginy: 60 });
 
-  const positioned = [];
-  const col = (x, items) =>
-    items.forEach((n, i) => positioned.push({ ...n, _x: x, _y: i * 130 + 60 }));
+  nodes.forEach((n) => g.setNode(String(n.id), { width: NODE_WIDTH, height: NODE_HEIGHT }));
 
-  col(60, sources);
-  col(320, streams);
-  col(580, sinks);
-  col(840, others);
+  links
+    .filter((l) => l.output_node_id != null && l.input_node_id != null)
+    .forEach((l) => {
+      if (g.hasNode(String(l.output_node_id)) && g.hasNode(String(l.input_node_id)))
+        g.setEdge(String(l.output_node_id), String(l.input_node_id));
+    });
 
-  return positioned;
+  dagre.layout(g);
+
+  return nodes.map((n) => {
+    const pos = g.node(String(n.id));
+    return {
+      ...n,
+      _x: pos ? pos.x - NODE_WIDTH  / 2 : 60,
+      _y: pos ? pos.y - NODE_HEIGHT / 2 : 60,
+    };
+  });
 }
 
-function buildFlowNodes(graphNodes, onSelect) {
-  const laid = autoLayout(graphNodes);
+function buildFlowNodes(graphNodes, graphLinks, onSelect) {
+  const laid = autoLayout(graphNodes, graphLinks);
   return laid.map((n) => ({
     id: String(n.id),
     type: "pwNode",
@@ -73,6 +74,16 @@ function buildFlowEdges(links) {
     }));
 }
 
+function loadSavedPositions() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function savePositions(posMap) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(posMap)); }
+  catch { /* quota / private browsing */ }
+}
+
 function GraphCanvas() {
   const { graph, master, status, sendCommand } = useDaemon();
   const [selectedNodeId, setSelectedNodeId] = useState(null);
@@ -82,26 +93,43 @@ function GraphCanvas() {
   }, []);
 
   const flowNodes = useMemo(
-    () => buildFlowNodes(graph.nodes, handleSelect),
-    [graph.nodes, handleSelect]
+    () => buildFlowNodes(graph.nodes, graph.links, handleSelect),
+    [graph.nodes, graph.links, handleSelect]
   );
   const flowEdges = useMemo(() => buildFlowEdges(graph.links), [graph.links]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync when graph changes (preserve user-dragged positions)
+  // Sync when graph changes; priority: localStorage > in-memory drag > dagre
   useMemo(() => {
+    const saved = loadSavedPositions();
     setNodes((prev) => {
-      const posMap = {};
-      prev.forEach((n) => { posMap[n.id] = n.position; });
+      const liveMap = {};
+      prev.forEach((n) => { liveMap[n.id] = n.position; });
       return flowNodes.map((n) => ({
         ...n,
-        position: posMap[n.id] || n.position,
+        position: saved[n.id] ?? liveMap[n.id] ?? n.position,
       }));
     });
     setEdges(flowEdges);
   }, [flowNodes, flowEdges]);
+
+  // Persist drag-end positions to localStorage
+  const handleNodesChange = useCallback(
+    (changes) => {
+      onNodesChange(changes);
+      const dropped = changes.filter(
+        (c) => c.type === "position" && c.dragging === false && c.position != null
+      );
+      if (dropped.length > 0) {
+        const saved = loadSavedPositions();
+        dropped.forEach((c) => { saved[c.id] = c.position; });
+        savePositions(saved);
+      }
+    },
+    [onNodesChange]
+  );
 
   const handleVolume = useCallback(
     (v) => sendCommand({ cmd: "set_volume", volume: v }),
@@ -117,7 +145,7 @@ function GraphCanvas() {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={NODE_TYPES}
         fitView
@@ -159,6 +187,26 @@ function GraphCanvas() {
         <span>{graph.nodes.length} nodes</span>
         <span style={{ color: "#555" }}>{graph.links.length} links</span>
       </div>
+
+      {/* Reset layout button */}
+      <button
+        onClick={() => { localStorage.removeItem(LS_KEY); setNodes(flowNodes); }}
+        style={{
+          position: "absolute",
+          top: 16,
+          right: 80,
+          zIndex: 10,
+          background: "#1a1a24",
+          border: "1px solid #333",
+          color: "#888",
+          borderRadius: 6,
+          padding: "5px 10px",
+          fontSize: 12,
+          cursor: "pointer",
+        }}
+      >
+        Reset layout
+      </button>
 
       <DiagDrawer
         nodeId={selectedNodeId}
