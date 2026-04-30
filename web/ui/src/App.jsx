@@ -17,13 +17,6 @@ import { useDaemon } from "./hooks/useDaemon.js";
 
 const NODE_TYPES = { pwNode: NodeBlock };
 
-// Only show audio-relevant nodes; discard Video, Midi, and internal driver nodes
-function isAudioNode(n) {
-  const mc = n.media_class;
-  if (!mc) return false;
-  return mc.startsWith("Audio/") || mc.startsWith("Stream/");
-}
-
 // Auto-layout: place nodes in a rough grid, left = sources, right = sinks
 function autoLayout(nodes) {
   const sources = nodes.filter(
@@ -37,6 +30,9 @@ function autoLayout(nodes) {
       n.media_class?.startsWith("Stream/Output")
   );
   const sinks = nodes.filter((n) => n.media_class?.startsWith("Audio/Sink"));
+  const others = nodes.filter(
+    (n) => !sources.includes(n) && !streams.includes(n) && !sinks.includes(n)
+  );
 
   const positioned = [];
   const col = (x, items) =>
@@ -45,6 +41,7 @@ function autoLayout(nodes) {
   col(60, sources);
   col(320, streams);
   col(580, sinks);
+  col(840, others);
 
   return positioned;
 }
@@ -84,14 +81,9 @@ function GraphCanvas() {
     setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
   }, []);
 
-  const audioNodes = useMemo(
-    () => graph.nodes.filter(isAudioNode),
-    [graph.nodes]
-  );
-
   const flowNodes = useMemo(
-    () => buildFlowNodes(audioNodes, handleSelect),
-    [audioNodes, handleSelect]
+    () => buildFlowNodes(graph.nodes, handleSelect),
+    [graph.nodes, handleSelect]
   );
   const flowEdges = useMemo(() => buildFlowEdges(graph.links), [graph.links]);
 
@@ -164,7 +156,7 @@ function GraphCanvas() {
       >
         <span style={{ color: "#e8e8ec", fontWeight: 700 }}>Pi Audio Plumber</span>
         <span style={{ color: "#555" }}>|</span>
-        <span>{audioNodes.length} nodes</span>
+        <span>{graph.nodes.length} nodes</span>
         <span style={{ color: "#555" }}>{graph.links.length} links</span>
       </div>
 
