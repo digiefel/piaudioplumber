@@ -96,17 +96,25 @@ function buildFlowNodes(graphNodes, graphLinks, onSelect) {
 function buildFlowEdges(links) {
   return links
     .filter((l) => l.output_node_id != null && l.input_node_id != null)
-    .map((l) => ({
-      id: String(l.id),
-      source: String(l.output_node_id),
-      target: String(l.input_node_id),
-      animated: l.state === "active",
-      style: {
-        stroke: l.state === "active" ? "#4ade80" : "#444",
-        strokeWidth: l.state === "active" ? 2 : 1,
-      },
-      label: l.state === "active" ? "" : l.state,
-    }));
+    .map((l) => {
+      const active = l.state === "active";
+      // Normalise the state label — strip prefix like "LinkState." for display
+      const stateLabel = l.state ? String(l.state).replace(/^.*\./, "") : "";
+      return {
+        id: String(l.id),
+        source: String(l.output_node_id),
+        target: String(l.input_node_id),
+        animated: active,
+        selectable: true,
+        style: {
+          stroke: active ? "#4ade80" : "#888",
+          strokeWidth: 2,
+        },
+        label: active ? "" : stateLabel,
+        labelStyle: { fill: "#888", fontSize: 10 },
+        labelBgStyle: { fill: "#0f0f11", fillOpacity: 0.8 },
+      };
+    });
 }
 
 function loadSavedPositions() {
@@ -215,6 +223,7 @@ function GraphCanvas() {
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
         nodeTypes={NODE_TYPES}
+        deleteKeyCode={["Backspace", "Delete"]}
         fitView
         colorMode="dark"
         style={{ background: "#0f0f11" }}

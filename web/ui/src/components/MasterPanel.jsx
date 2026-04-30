@@ -1,8 +1,19 @@
+import { useEffect, useState } from "react";
+
 /**
  * MasterPanel — floating volume/mute control and connection status.
  */
 export function MasterPanel({ master, status, onVolume, onMute }) {
   const statusColor = status === "connected" ? "#4ade80" : status === "connecting" ? "#facc15" : "#f87171";
+
+  // Local slider value for instant visual feedback; only fires command on release
+  const [localVolume, setLocalVolume] = useState(Math.round((master.volume || 0) * 100));
+
+  // Sync from PipeWire events (but don't override while dragging)
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!dragging) setLocalVolume(Math.round((master.volume || 0) * 100));
+  }, [master.volume, dragging]);
 
   return (
     <div
@@ -30,14 +41,15 @@ export function MasterPanel({ master, status, onVolume, onMute }) {
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
           <label style={{ fontSize: 11, color: "#888" }}>Volume</label>
-          <span style={{ fontSize: 11, color: "#ccc" }}>{Math.round((master.volume || 0) * 100)}%</span>
+          <span style={{ fontSize: 11, color: "#ccc" }}>{localVolume}%</span>
         </div>
         <input
           type="range"
           min={0}
           max={150}
-          value={Math.round((master.volume || 0) * 100)}
-          onChange={(e) => onVolume(parseInt(e.target.value) / 100)}
+          value={localVolume}
+          onChange={(e) => { setDragging(true); setLocalVolume(parseInt(e.target.value)); }}
+          onPointerUp={(e) => { setDragging(false); onVolume(parseInt(e.target.value) / 100); }}
           style={{ width: "100%", accentColor: "#4ade80" }}
         />
       </div>
