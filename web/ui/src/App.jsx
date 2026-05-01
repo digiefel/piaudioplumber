@@ -82,7 +82,7 @@ function autoLayout(nodes, links) {
   return positioned;
 }
 
-function isNodeActive(node, links) {
+export function isNodeActive(node, links) {
   if (!node.is_running) return false;
   return links.some(
     (l) =>
@@ -93,20 +93,30 @@ function isNodeActive(node, links) {
 
 function buildFlowNodes(graphNodes, graphLinks, onSelect) {
   const laid = autoLayout(graphNodes, graphLinks);
-  return laid.map((n) => ({
-    id: String(n.id),
-    type: "pwNode",
-    position: { x: n._x, y: n._y },
-    data: {
-      node: n,
-      onSelect,
-      isActive: isNodeActive(n, graphLinks),
-    },
-    draggable: true,
-  }));
+  return laid.map((n) => {
+    const incomingLinks = graphLinks.filter(
+      (l) => l.input_node_id === n.id && l.output_node_id != null
+    );
+    const outgoingLinks = graphLinks.filter(
+      (l) => l.output_node_id === n.id && l.input_node_id != null
+    );
+    return {
+      id: String(n.id),
+      type: "pwNode",
+      position: { x: n._x, y: n._y },
+      data: {
+        node: n,
+        onSelect,
+        isActive: isNodeActive(n, graphLinks),
+        incomingLinks,
+        outgoingLinks,
+      },
+      draggable: true,
+    };
+  });
 }
 
-function buildFlowEdges(links) {
+export function buildFlowEdges(links) {
   return links
     .filter((l) => l.output_node_id != null && l.input_node_id != null)
     .map((l) => {

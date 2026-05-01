@@ -122,16 +122,16 @@ export function useDaemon() {
 }
 
 // Object discriminators — work for both normalized snapshot shape and raw GraphObject
-function isNodeObj(obj) {
+export function isNodeObj(obj) {
   return obj.type === "PipeWire:Interface:Node" || obj.is_running !== undefined;
 }
-function isLinkObj(obj) {
+export function isLinkObj(obj) {
   return obj.type === "PipeWire:Interface:Link" ||
          obj.output_node_id !== undefined ||
          (obj.info && obj.info["output-node-id"] !== undefined);
 }
 
-function normalizeNode(obj) {
+export function normalizeNode(obj) {
   // If already in snapshot/event shape, pass through
   if (obj.is_running !== undefined && obj.media_class !== undefined) {
     return obj;
@@ -151,7 +151,7 @@ function normalizeNode(obj) {
   };
 }
 
-function normalizeLink(obj) {
+export function normalizeLink(obj) {
   // If already flat (snapshot/normalized event), pass through
   if (obj.output_node_id !== undefined) {
     return obj;

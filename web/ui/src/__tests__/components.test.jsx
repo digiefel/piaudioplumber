@@ -1,0 +1,188 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { NodeBlock } from "../components/NodeBlock.jsx";
+import { PillHandle } from "../components/PillHandle.jsx";
+import { MasterPanel } from "../components/MasterPanel.jsx";
+
+// React Flow Handle is a no-op in test env (no canvas layout)
+vi.mock("@xyflow/react", () => ({
+  Handle: ({ type, position, style }) => (
+    <div data-testid={`handle-${type}`} data-position={position} style={style} />
+  ),
+  Position: { Left: "left", Right: "right" },
+}));
+
+// ── NodeBlock ────────────────────────────────────────────────────────────────
+
+function makeNodeData(overrides = {}) {
+  return {
+    node: {
+      id: 1,
+      name: "test.node",
+      description: "Test Node",
+      media_class: "Audio/Sink",
+      application: null,
+      state: "running",
+      is_running: true,
+      ...overrides,
+    },
+    onSelect: vi.fn(),
+    isActive: false,
+    incomingLinks: [],
+    outgoingLinks: [],
+  };
+}
+
+describe("NodeBlock", () => {
+  it("renders node description", () => {
+    render(<NodeBlock data={makeNodeData()} selected={false} />);
+    expect(screen.getByText("Test Node")).toBeTruthy();
+  });
+
+  it("renders media class", () => {
+    render(<NodeBlock data={makeNodeData()} selected={false} />);
+    expect(screen.getByText("Audio/Sink")).toBeTruthy();
+  });
+
+  it("applies yellow border when selected", () => {
+    const { container } = render(<NodeBlock data={makeNodeData()} selected={true} />);
+    const root = container.firstChild;
+    // jsdom normalizes hex → rgb
+    expect(root.style.border).toContain("rgb(250, 204, 21)");
+  });
+
+  it("applies green border when running and not selected", () => {
+    const { container } = render(<NodeBlock data={makeNodeData()} selected={false} />);
+    const root = container.firstChild;
+    expect(root.style.border).toContain("rgb(74, 222, 128)");
+  });
+
+  it("applies dim border when not running", () => {
+    const { container } = render(
+      <NodeBlock data={makeNodeData({ is_running: false })} selected={false} />
+    );
+    const root = container.firstChild;
+    expect(root.style.border).toContain("rgb(68, 68, 68)");
+  });
+
+  it("calls onSelect when clicked", () => {
+    const data = makeNodeData();
+    render(<NodeBlock data={data} selected={false} />);
+    fireEvent.click(screen.getByText("Test Node"));
+    expect(data.onSelect).toHaveBeenCalledWith(data.node);
+  });
+});
+
+// ── PillHandle ───────────────────────────────────────────────────────────────
+
+describe("PillHandle", () => {
+  it("renders a single segment when no links", () => {
+    const { container } = render(<PillHandle side="input" links={[]} />);
+    // No segment divs rendered (only the + placeholder)
+    const segments = container.querySelectorAll("[style*='4ade80'], [style*='4a4a60']");
+    expect(segments.length).toBe(0);
+    expect(container.textContent).toContain("+");
+  });
+
+  it("renders one segment div per link", () => {
+    const links = [
+      { id: 1, state: "active" },
+      { id: 2, state: "paused" },
+      { id: 3, state: "active" },
+    ];
+    const { getAllByTestId } = render(<PillHandle side="input" links={links} />);
+    expect(getAllByTestId("pill-segment")).toHaveLength(3);
+  });
+
+  it("renders a React Flow handle for target when side=input", () => {
+    render(<PillHandle side="input" links={[]} />);
+    expect(screen.getByTestId("handle-target")).toBeTruthy();
+  });
+
+  it("renders a React Flow handle for source when side=output", () => {
+    render(<PillHandle side="output" links={[]} />);
+    expect(screen.getByTestId("handle-source")).toBeTruthy();
+  });
+
+  it("pill height grows with number of links", () => {
+    const { container: c0 } = render(<PillHandle side="input" links={[]} />);
+    const { container: c2 } = render(
+      <PillHandle side="input" links={[{ id: 1, state: "active" }, { id: 2, state: "paused" }]} />
+    );
+    const h0 = parseInt(c0.firstChild.style.height);
+    const h2 = parseInt(c2.firstChild.style.height);
+    expect(h2).toBeGreaterThan(h0);
+  });
+});
+
+// ── MasterPanel ──────────────────────────────────────────────────────────────
+
+describe("MasterPanel", () => {
+  const baseMaster = { volume: 0.8, muted: false, sink_name: "hw:CARD" };
+
+  it("shows 'Master' title when no node selected", () => {
+    render(
+      <MasterPanel master={baseMaster} selectedNode={null} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    expect(screen.getByText("Master")).toBeTruthy();
+  });
+
+  it("shows 'Selected' title when a node is selected", () => {
+    const node = { id: 5, description: "My Node", name: "my.node" };
+    render(
+      <MasterPanel master={baseMaster} selectedNode={node} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    expect(screen.getByText("Selected")).toBeTruthy();
+  });
+
+  it("shows selected node name when a node is selected", () => {
+    const node = { id: 5, description: "My Node", name: "my.node" };
+    render(
+      <MasterPanel master={baseMaster} selectedNode={node} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    expect(screen.getByText(/My Node/)).toBeTruthy();
+  });
+
+  it("hides sink name when a node is selected", () => {
+    const node = { id: 5, description: "My Node", name: "my.node" };
+    const { queryByText } = render(
+      <MasterPanel master={baseMaster} selectedNode={node} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    expect(queryByText(/hw:CARD/)).toBeNull();
+  });
+
+  it("shows sink name when no node selected", () => {
+    render(
+      <MasterPanel master={baseMaster} selectedNode={null} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    expect(screen.getByText(/hw:CARD/)).toBeTruthy();
+  });
+
+  it("applies yellow accent when node is selected", () => {
+    const node = { id: 5, description: "My Node" };
+    const { getByText } = render(
+      <MasterPanel master={baseMaster} selectedNode={node} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    const title = getByText("Selected");
+    // jsdom normalizes #facc15 → rgb(250, 204, 21)
+    expect(title.style.color).toBe("rgb(250, 204, 21)");
+  });
+
+  it("calls onMute when mute button clicked", () => {
+    const onMute = vi.fn();
+    render(
+      <MasterPanel master={baseMaster} selectedNode={null} status="connected" onVolume={() => {}} onMute={onMute} />
+    );
+    fireEvent.click(screen.getByText(/Unmuted/i));
+    expect(onMute).toHaveBeenCalledWith(true);
+  });
+
+  it("shows status dot with connected color", () => {
+    const { container } = render(
+      <MasterPanel master={baseMaster} selectedNode={null} status="connected" onVolume={() => {}} onMute={() => {}} />
+    );
+    const dot = container.querySelector("[style*='border-radius: 50%']");
+    // jsdom normalizes #4ade80 → rgb(74, 222, 128)
+    expect(dot.style.background).toBe("rgb(74, 222, 128)");
+  });
+});

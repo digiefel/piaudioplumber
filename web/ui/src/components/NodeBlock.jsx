@@ -1,8 +1,5 @@
-/**
- * NodeBlock — rendered by React Flow as a custom node.
- * Shows PipeWire node info inside a styled card.
- */
-import { Handle, Position } from "@xyflow/react";
+import { useState } from "react";
+import { PillHandle } from "./PillHandle.jsx";
 
 const CLASS_COLORS = {
   "Audio/Sink": "#1a4b8c",
@@ -12,6 +9,7 @@ const CLASS_COLORS = {
 };
 
 export function NodeBlock({ data, selected }) {
+  const [hover, setHover] = useState(false);
   const { node } = data;
   const isRunning = node.is_running;
   const bg = CLASS_COLORS[node.media_class] || "#2a2a35";
@@ -20,9 +18,12 @@ export function NodeBlock({ data, selected }) {
     ? "0 0 0 2px #facc1599, 0 0 18px #facc1577"
     : (isRunning ? `0 0 12px ${borderColor}44` : "none");
 
+  const speakerIcon = data.isActive ? "🔊" : (isRunning ? "🔈" : null);
+
   return (
     <div
       style={{
+        position: "relative",
         background: bg,
         border: `2px solid ${borderColor}`,
         borderRadius: 8,
@@ -35,9 +36,34 @@ export function NodeBlock({ data, selected }) {
         boxShadow,
         transition: "box-shadow 120ms, border-color 120ms",
       }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       onClick={() => data.onSelect?.(node)}
     >
-      <Handle type="target" position={Position.Left} style={{ background: "#888" }} />
+      {speakerIcon && (
+        <div
+          style={{
+            position: "absolute",
+            top: -24,
+            right: 2,
+            fontSize: 13,
+            opacity: hover ? 1 : 0,
+            transition: "opacity 150ms",
+            pointerEvents: "none",
+            background: "#1a1a24cc",
+            borderRadius: 4,
+            padding: "2px 5px",
+            border: "1px solid #333",
+            lineHeight: 1.4,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {speakerIcon}
+        </div>
+      )}
+
+      <PillHandle side="input" links={data.incomingLinks || []} />
+
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, color: isRunning ? "#4ade80" : "#ccc" }}>
         {node.description || node.name || `Node ${node.id}`}
       </div>
@@ -58,7 +84,8 @@ export function NodeBlock({ data, selected }) {
       >
         {node.state || "unknown"}
       </div>
-      <Handle type="source" position={Position.Right} style={{ background: "#888" }} />
+
+      <PillHandle side="output" links={data.outgoingLinks || []} />
     </div>
   );
 }
