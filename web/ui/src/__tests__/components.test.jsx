@@ -71,6 +71,21 @@ describe("NodeBlock", () => {
     fireEvent.click(screen.getByText("Test Node"));
     expect(data.onSelect).toHaveBeenCalledWith(data.node);
   });
+
+  it("renders volume badge when node has a volume", () => {
+    render(<NodeBlock data={makeNodeData({ volume: 0.4, muted: false })} selected={false} />);
+    expect(screen.getByText(/Vol:\s*40%/)).toBeTruthy();
+  });
+
+  it("shows '(muted)' when node is muted", () => {
+    render(<NodeBlock data={makeNodeData({ volume: 0.4, muted: true })} selected={false} />);
+    expect(screen.getByText(/\(muted\)/)).toBeTruthy();
+  });
+
+  it("hides volume badge when node has no volume info", () => {
+    const { queryByText } = render(<NodeBlock data={makeNodeData()} selected={false} />);
+    expect(queryByText(/Vol:/)).toBeNull();
+  });
 });
 
 // ── PillHandle ───────────────────────────────────────────────────────────────
@@ -184,5 +199,35 @@ describe("MasterPanel", () => {
     const dot = container.querySelector("[style*='border-radius: 50%']");
     // jsdom normalizes #4ade80 → rgb(74, 222, 128)
     expect(dot.style.background).toBe("rgb(74, 222, 128)");
+  });
+
+  it("uses selected node's volume as slider baseline (not master)", () => {
+    const node = { id: 5, description: "My Node", volume: 0.3, muted: false };
+    const { container } = render(
+      <MasterPanel
+        master={{ volume: 0.8, muted: false }}
+        selectedNode={node}
+        status="connected"
+        onVolume={() => {}}
+        onMute={() => {}}
+      />
+    );
+    // Slider value is local state initialized from baseline; should reflect node.volume (30) not master (80)
+    const slider = container.querySelector("input[type='range']");
+    expect(slider.value).toBe("30");
+  });
+
+  it("reflects selected node's mute state on the mute button", () => {
+    const node = { id: 5, description: "My Node", volume: 0.5, muted: true };
+    render(
+      <MasterPanel
+        master={{ volume: 0.8, muted: false }}
+        selectedNode={node}
+        status="connected"
+        onVolume={() => {}}
+        onMute={() => {}}
+      />
+    );
+    expect(screen.getByText(/Muted/i)).toBeTruthy();
   });
 });

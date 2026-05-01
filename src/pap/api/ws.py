@@ -24,14 +24,76 @@ from fastapi import WebSocket, WebSocketDisconnect
 from pap.daemon.control import AudioControl
 from pap.daemon.state_store import StateStore
 from pap.model.events import EventKind, ObjectAdded, ObjectChanged, serialize_event
-from pap.model.graph import GraphObject
+from pap.model.graph import Graph, GraphObject
 from pap.pw import pwlink
 
 logger = logging.getLogger(__name__)
 
 
-def normalize_node(n: GraphObject) -> dict[str, Any]:
-    """Snapshot/event shape for a Node — same fields the frontend expects."""
+def _resolve_node_volume_mute(
+    n: GraphObject, graph: Graph
+) -> tuple[float | None, bool | None]:
+    """Return (volume_linear, muted) for a node, or (None, None) if not exposed.
+
+    Stream nodes carry volume on their own Props.  Hardware nodes
+    (Audio/Sink, Audio/Source) hold their effective volume on the parent
+    Device's Route, matched by `Route.device == node.card.profile.device`.
+    All values returned are cube-rooted so they compare directly to what
+    `wpctl get-volume` reports.
+    """
+    mc = n.media_class or ""
+    # Stream nodes (per-app volume)
+    if mc.startswith("Stream/"):
+        v = n.node_volume_self
+        m = n.node_muted_self
+        if v is not None or m is not None:
+            return v, m
+
+    # Hardware nodes: look up the parent Device's Route
+    if mc.startswith("Audio/"):
+        try:
+            dev_id = int(n.props.get("device.id"))
+            prof_dev = int(n.props.get("card.profile.device"))
+        except (TypeError, ValueError):
+            # Fall back to the node's own Props if the device link isn't there
+            return n.node_volume_self, n.node_muted_self
+
+        device = graph.objects.get(dev_id)
+        if device is None or not device.is_device:
+            return n.node_volume_self, n.node_muted_self
+
+        for route in device.device_routes:
+            if route.get("device") != prof_dev:
+                continue
+            rprops = route.get("props") or {}
+            chans = rprops.get("channelVolumes")
+            mute = rprops.get("mute")
+            volume: float | None = None
+            if isinstance(chans, list) and chans:
+                avg = sum(chans) / len(chans)
+                volume = avg ** (1 / 3)
+            else:
+                v = rprops.get("volume")
+                if isinstance(v, (int, float)):
+                    volume = v ** (1 / 3)
+            return volume, (bool(mute) if mute is not None else None)
+
+    # Anything else: try the node's own Props
+    return n.node_volume_self, n.node_muted_self
+
+
+def normalize_node(n: GraphObject, graph: Graph | None = None) -> dict[str, Any]:
+    """Snapshot/event shape for a Node — same fields the frontend expects.
+
+    `graph` is required to resolve volume for hardware nodes (whose volume
+    lives on the parent Device's Route).  When omitted (e.g. unit tests
+    that don't care about volume), volume/muted will fall back to the
+    node's own Props if available, else None.
+    """
+    if graph is not None:
+        volume, muted = _resolve_node_volume_mute(n, graph)
+    else:
+        volume, muted = n.node_volume_self, n.node_muted_self
     return {
         "id": n.id,
         "name": n.node_name,
@@ -42,6 +104,8 @@ def normalize_node(n: GraphObject) -> dict[str, Any]:
         "is_running": n.is_running,
         "type": str(n.type),
         "props": n.props,
+        "volume": volume,
+        "muted": muted,
     }
 
 
@@ -55,9 +119,12 @@ def normalize_link(lk: GraphObject) -> dict[str, Any]:
     }
 
 
-def serialize_event_normalized(event: Any) -> dict[str, Any]:
+def serialize_event_normalized(event: Any, graph: Graph | None = None) -> dict[str, Any]:
     """Like serialize_event, but for ObjectAdded/ObjectChanged of Nodes/Links,
     replace the raw `obj` with the snapshot-shape dict so wire format matches.
+
+    `graph` allows volume resolution for Node events (hardware nodes need
+    the parent Device's Route info).
     """
     if isinstance(event, (ObjectAdded, ObjectChanged)):
         obj = event.obj
@@ -65,7 +132,7 @@ def serialize_event_normalized(event: Any) -> dict[str, Any]:
         if event.kind == EventKind.OBJECT_CHANGED and isinstance(event, ObjectChanged):
             base["changed_fields"] = event.changed_fields
         if obj.is_node:
-            base["obj"] = normalize_node(obj)
+            base["obj"] = normalize_node(obj, graph)
             return base
         if obj.is_link:
             base["obj"] = normalize_link(obj)
@@ -114,7 +181,8 @@ class WSManager:
         while True:
             event = await q.get()
             try:
-                await ws.send_text(json.dumps(serialize_event_normalized(event)))
+                payload = serialize_event_normalized(event, self._store.graph)
+                await ws.send_text(json.dumps(payload))
             except Exception:
                 break
 
@@ -170,7 +238,7 @@ class WSManager:
         return {
             "type": "snapshot",
             "version": graph.version,
-            "nodes": [normalize_node(n) for n in graph.nodes],
+            "nodes": [normalize_node(n, graph) for n in graph.nodes],
             "links": [normalize_link(lk) for lk in graph.links],
             "master": {
                 "sink_node_id": master.sink_node_id,

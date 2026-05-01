@@ -86,6 +86,38 @@ class StateStore:
 
         self._publish(event)
 
+        # When a Device's Route changes (volume / mute on hardware), the
+        # effective volume of every Node referencing this Device changes
+        # too — but pw-dump only emits an event for the Device itself.
+        # Republish ObjectChanged for each affected Node so WS clients can
+        # update their per-node volume display without tracking devices.
+        if obj.is_device and self._device_routes_changed(old, obj):
+            self._republish_nodes_for_device(obj.id)
+
+    def _device_routes_changed(self, old: GraphObject | None, new: GraphObject) -> bool:
+        """True if the device's Route param differs between old and new."""
+        if old is None:
+            return True  # new device: republish so nodes pick up its routes
+        old_routes = old.device_routes if old.is_device else []
+        new_routes = new.device_routes
+        return old_routes != new_routes
+
+    def _republish_nodes_for_device(self, device_id: int) -> None:
+        """Emit synthesized ObjectChanged events for Nodes referencing a Device."""
+        for node in self._graph.nodes:
+            try:
+                node_dev_id = int(node.props.get("device.id"))
+            except (TypeError, ValueError):
+                continue
+            if node_dev_id != device_id:
+                continue
+            event = ObjectChanged(
+                obj=node,
+                changed_fields=["device_route"],
+                seq=self._next_seq(),
+            )
+            self._publish(event)
+
     def remove_object(self, obj_id: int) -> None:
         """Remove an object by ID."""
         obj = self._graph.objects.get(obj_id)

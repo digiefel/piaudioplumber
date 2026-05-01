@@ -1,0 +1,11 @@
+/* Selected edge highlight — overrides inline style.stroke set in buildFlowEdges
+   (so we need !important). Yellow matches the node-selection accent. */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #facc15 !important;
+  stroke-width: 3 !important;
+}
+
+/* Make the entire edge area clickable, not just the thin path */
+.react-flow__edge {
+  cursor: pointer;
+}

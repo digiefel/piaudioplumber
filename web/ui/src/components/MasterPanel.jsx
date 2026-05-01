@@ -12,20 +12,25 @@ export function MasterPanel({ master, selectedNode, status, onVolume, onMute }) 
   const statusColor = status === "connected" ? "#4ade80" : status === "connecting" ? "#facc15" : "#f87171";
 
   // Local slider value for instant visual feedback; only fires command on release.
-  // When selection changes, snap the slider to whatever baseline we have (master.volume
-  // as fallback — per-node volume tracking is a follow-on).
-  const baseline = master.volume ?? 0;
+  // When in node mode, baseline = selected node's actual volume (resolved by daemon
+  // from Device.Route for hardware nodes, Node.Props for streams). Falls back to
+  // master.volume if the node hasn't published a volume.
+  const baseline = isNodeMode
+    ? (selectedNode.volume ?? master.volume ?? 0)
+    : (master.volume ?? 0);
   const [localVolume, setLocalVolume] = useState(Math.round(baseline * 100));
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (!dragging) setLocalVolume(Math.round((master.volume || 0) * 100));
+    if (!dragging) setLocalVolume(Math.round(baseline * 100));
     // re-sync when the selected node changes too — slider resets to known baseline
-    // intentionally not in deps to avoid jitter mid-drag
+    // intentionally not exhaustively deped to avoid jitter mid-drag
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [master.volume, dragging, selectedNode?.id]);
+  }, [baseline, dragging, selectedNode?.id]);
 
-  const muted = isNodeMode ? false : master.muted;
+  const muted = isNodeMode
+    ? (selectedNode.muted ?? false)
+    : master.muted;
 
   return (
     <div

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -158,6 +158,24 @@ function GraphCanvas() {
     setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
   }, []);
 
+  // Esc fully deselects (closes per-node panel, reverts MasterPanel to Master).
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setSelectedNodeId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // If the selected node disappears from the graph (e.g. USB replug, profile
+  // change), clear the selection so MasterPanel doesn't stick pointing at
+  // nothing.
+  useEffect(() => {
+    if (selectedNodeId != null && !graph.nodes.find((n) => n.id === selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+  }, [graph.nodes, selectedNodeId]);
+
   const flowNodes = useMemo(
     () => buildFlowNodes(graph.nodes, graph.links, handleSelect)
             .map((n) => (n.id === String(selectedNodeId) ? { ...n, selected: true } : n)),
@@ -263,6 +281,7 @@ function GraphCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
+        onPaneClick={() => setSelectedNodeId(null)}
         nodeTypes={NODE_TYPES}
         deleteKeyCode={["Backspace", "Delete"]}
         fitView

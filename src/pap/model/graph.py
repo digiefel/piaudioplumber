@@ -203,6 +203,59 @@ class GraphObject(BaseModel):
                     return None
         return None
 
+    # ── volume helpers ──
+    # PipeWire stores channelVolumes as the cube of the linear value that
+    # wpctl/pavucontrol report.  All accessors below return cube-rooted
+    # (i.e. wpctl-comparable) values so callers don't need to remember.
+
+    @property
+    def node_props_block(self) -> dict | None:
+        """Node's own Props parameter (Spa:Pod:Object:Param:Props), if exposed.
+
+        Stream nodes carry their per-app volume here.  Hardware nodes
+        typically hold this at 1.0 — their effective volume lives on the
+        parent Device's Route.
+        """
+        if not self.is_node or not isinstance(self.info, dict):
+            return None
+        params = self.info.get("params") or {}
+        plist = params.get("Props") or []
+        return plist[0] if isinstance(plist, list) and plist else None
+
+    @property
+    def node_volume_self(self) -> float | None:
+        """Linear volume from this Node's own Props, cube-rooted (wpctl-scale).
+
+        Returns None if the Node doesn't expose Props.  Returns 1.0 for
+        hardware nodes whose effective volume lives elsewhere — caller
+        should resolve via the parent Device for hardware classes.
+        """
+        p = self.node_props_block
+        if not p:
+            return None
+        chans = p.get("channelVolumes")
+        if isinstance(chans, list) and chans:
+            avg = sum(chans) / len(chans)
+            return avg ** (1 / 3)
+        v = p.get("volume")
+        return v ** (1 / 3) if isinstance(v, (int, float)) else None
+
+    @property
+    def node_muted_self(self) -> bool | None:
+        p = self.node_props_block
+        if not p or "mute" not in p:
+            return None
+        return bool(p["mute"])
+
+    @property
+    def device_routes(self) -> list[dict]:
+        """List of Route entries from this Device's params, if any."""
+        if not self.is_device or not isinstance(self.info, dict):
+            return []
+        params = self.info.get("params") or {}
+        routes = params.get("Route") or []
+        return [r for r in routes if isinstance(r, dict)]
+
 
 class Graph(BaseModel):
     """Complete normalized snapshot of the PipeWire graph."""

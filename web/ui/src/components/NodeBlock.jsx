@@ -85,6 +85,20 @@ export function NodeBlock({ data, selected }) {
         {node.state || "unknown"}
       </div>
 
+      {node.volume != null && (
+        <div
+          style={{
+            marginTop: 2,
+            fontSize: 10,
+            color: node.muted ? "#f87171" : "#bbb",
+            fontFamily: "ui-monospace, SFMono-Regular, monospace",
+            letterSpacing: 0.3,
+          }}
+        >
+          Vol: {Math.round(node.volume * 100)}%{node.muted ? " (muted)" : ""}
+        </div>
+      )}
+
       <PillHandle side="output" links={data.outgoingLinks || []} />
     </div>
   );
