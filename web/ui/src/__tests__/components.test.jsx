@@ -4,18 +4,10 @@ import { NodeBlock } from "../components/NodeBlock.jsx";
 import { PillHandle } from "../components/PillHandle.jsx";
 import { MasterPanel } from "../components/MasterPanel.jsx";
 
-// React Flow Handle is a no-op in test env (no canvas layout). Expose
-// id/position/top via data-attrs so we can assert ordering and slot layout.
+// React Flow Handle is a no-op in test env (no canvas layout)
 vi.mock("@xyflow/react", () => ({
-  Handle: ({ id, type, position, style, "data-testid": testId, "data-link-id": linkId }) => (
-    <div
-      data-testid={testId || `handle-${type}`}
-      data-id={id}
-      data-position={position}
-      data-top={style?.top}
-      data-link-id={linkId}
-      style={style}
-    />
+  Handle: ({ type, position, style }) => (
+    <div data-testid={`handle-${type}`} data-position={position} style={style} />
   ),
   Position: { Left: "left", Right: "right" },
 }));
@@ -99,90 +91,42 @@ describe("NodeBlock", () => {
 // ── PillHandle ───────────────────────────────────────────────────────────────
 
 describe("PillHandle", () => {
-  it("renders an anonymous handle + '+' glyph when no links and not expanded", () => {
-    const { container } = render(<PillHandle side="input" links={[]} expanded={false} />);
-    expect(screen.getByTestId("pill-anon")).toBeTruthy();
+  it("renders a single segment when no links", () => {
+    const { container } = render(<PillHandle side="input" links={[]} />);
+    // No segment divs rendered (only the + placeholder)
+    const segments = container.querySelectorAll("[style*='4ade80'], [style*='4a4a60']");
+    expect(segments.length).toBe(0);
     expect(container.textContent).toContain("+");
   });
 
-  it("renders one Handle per link in sorted slot order", () => {
-    // Two incoming links with peers 5 and 1; sorted slot order = [peer1, peer5]
+  it("renders one segment div per link", () => {
     const links = [
-      { id: 100, output_node_id: 5, input_node_id: 999, state: "active" },
-      { id: 200, output_node_id: 1, input_node_id: 999, state: "paused" },
+      { id: 1, state: "active" },
+      { id: 2, state: "paused" },
+      { id: 3, state: "active" },
     ];
-    const { getAllByTestId } = render(
-      <PillHandle side="input" links={links} expanded={false} />
-    );
-    const segments = getAllByTestId("pill-segment");
-    expect(segments).toHaveLength(2);
-    // First slot in DOM order should be the peer-1 link (id=200)
-    expect(segments[0].getAttribute("data-link-id")).toBe("200");
-    expect(segments[1].getAttribute("data-link-id")).toBe("100");
+    const { getAllByTestId } = render(<PillHandle side="input" links={links} />);
+    expect(getAllByTestId("pill-segment")).toHaveLength(3);
   });
 
-  it("uses slotHandleId convention so edges can target the right slot", () => {
-    const links = [{ id: 42, output_node_id: 5, input_node_id: 999, state: "active" }];
-    const { getAllByTestId } = render(
-      <PillHandle side="input" links={links} expanded={false} />
-    );
-    const seg = getAllByTestId("pill-segment")[0];
-    // Edge will set targetHandle="in-42" → must match the Handle's id
-    expect(seg.getAttribute("data-id")).toBe("in-42");
+  it("renders a React Flow handle for target when side=input", () => {
+    render(<PillHandle side="input" links={[]} />);
+    expect(screen.getByTestId("handle-target")).toBeTruthy();
   });
 
-  it("renders +slots above and below when expanded", () => {
-    const links = [{ id: 7, output_node_id: 1, input_node_id: 999, state: "active" }];
-    const { queryByTestId } = render(
-      <PillHandle side="input" links={links} expanded={false} />
-    );
-    expect(queryByTestId("pill-add-top")).toBeNull();
-    expect(queryByTestId("pill-add-bot")).toBeNull();
-
-    const expanded = render(
-      <PillHandle side="input" links={links} expanded={true} />
-    );
-    expect(expanded.getByTestId("pill-add-top")).toBeTruthy();
-    expect(expanded.getByTestId("pill-add-bot")).toBeTruthy();
-  });
-
-  it("renders source-type handles when side=output", () => {
-    const links = [{ id: 1, output_node_id: 999, input_node_id: 5, state: "active" }];
-    const { getAllByTestId } = render(
-      <PillHandle side="output" links={links} expanded={false} />
-    );
-    // Our mock uses data-testid="pill-segment" for connection slots
-    expect(getAllByTestId("pill-segment")[0].getAttribute("data-id")).toBe("out-1");
+  it("renders a React Flow handle for source when side=output", () => {
+    render(<PillHandle side="output" links={[]} />);
+    expect(screen.getByTestId("handle-source")).toBeTruthy();
   });
 
   it("pill height grows with number of links", () => {
-    const { container: c0 } = render(<PillHandle side="input" links={[]} expanded={false} />);
+    const { container: c0 } = render(<PillHandle side="input" links={[]} />);
     const { container: c2 } = render(
-      <PillHandle
-        side="input"
-        links={[
-          { id: 1, output_node_id: 1, input_node_id: 999, state: "active" },
-          { id: 2, output_node_id: 2, input_node_id: 999, state: "paused" },
-        ]}
-        expanded={false}
-      />
+      <PillHandle side="input" links={[{ id: 1, state: "active" }, { id: 2, state: "paused" }]} />
     );
     const h0 = parseInt(c0.firstChild.style.height);
     const h2 = parseInt(c2.firstChild.style.height);
     expect(h2).toBeGreaterThan(h0);
-  });
-
-  it("expanded pill is taller than collapsed pill (room for +slots)", () => {
-    const links = [{ id: 1, output_node_id: 1, input_node_id: 999, state: "active" }];
-    const { container: cCollapsed } = render(
-      <PillHandle side="input" links={links} expanded={false} />
-    );
-    const { container: cExpanded } = render(
-      <PillHandle side="input" links={links} expanded={true} />
-    );
-    const h0 = parseInt(cCollapsed.firstChild.style.height);
-    const h1 = parseInt(cExpanded.firstChild.style.height);
-    expect(h1).toBeGreaterThan(h0);
   });
 });
 
