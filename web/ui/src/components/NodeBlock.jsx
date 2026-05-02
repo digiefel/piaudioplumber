@@ -62,7 +62,7 @@ export function NodeBlock({ data, selected }) {
         </div>
       )}
 
-      <PillHandle side="input" links={data.incomingLinks || []} />
+      <PillHandle side="input" links={data.incomingLinksOrdered || data.incomingLinks || []} />
 
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, color: isRunning ? "#4ade80" : "#ccc" }}>
         {node.description || node.name || `Node ${node.id}`}
@@ -99,7 +99,7 @@ export function NodeBlock({ data, selected }) {
         </div>
       )}
 
-      <PillHandle side="output" links={data.outgoingLinks || []} />
+      <PillHandle side="output" links={data.outgoingLinksOrdered || data.outgoingLinks || []} />
     </div>
   );
 }

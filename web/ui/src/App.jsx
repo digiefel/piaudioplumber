@@ -15,6 +15,17 @@ import { DiagDrawer } from "./components/DiagDrawer.jsx";
 import { MasterPanel } from "./components/MasterPanel.jsx";
 import { NodeBlock } from "./components/NodeBlock.jsx";
 import { useDaemon } from "./hooks/useDaemon.js";
+import {
+  loadSlotMap,
+  saveSlotMap,
+  nodeStableId,
+  linkSig,
+  pillKey,
+  applySlotOrder,
+  insertAt,
+  appendSig,
+  removeSig,
+} from "./utils/slots.js";
 
 const NODE_TYPES = { pwNode: NodeBlock };
 const NODE_WIDTH  = 220;
@@ -116,7 +127,8 @@ function buildFlowNodes(graphNodes, graphLinks, onSelect) {
   });
 }
 
-export function buildFlowEdges(links) {
+// nodesById is optional; when provided, sets sourceHandle/targetHandle for per-slot routing.
+export function buildFlowEdges(links, nodesById) {
   // Dedupe by (source, target) pair so optimistic-deleted + echoed-readded
   // edges from a reroute don't double-render briefly. Keep the edge with the
   // higher numeric id (PipeWire IDs are monotonic, so newer wins).
@@ -133,10 +145,23 @@ export function buildFlowEdges(links) {
     const active = l.state === "active";
     // Normalise the state label — strip prefix like "LinkState." for display
     const stateLabel = l.state ? String(l.state).replace(/^.*\./, "") : "";
+    // Compute per-slot handle IDs when node names are available
+    let sourceHandle, targetHandle;
+    if (nodesById) {
+      const outNode = nodesById[String(l.output_node_id)];
+      const inNode  = nodesById[String(l.input_node_id)];
+      if (outNode && inNode) {
+        const sig = linkSig(nodeStableId(outNode), nodeStableId(inNode));
+        sourceHandle = `slot-${sig}`;
+        targetHandle = `slot-${sig}`;
+      }
+    }
     return {
       id: String(l.id),
       source: String(l.output_node_id),
       target: String(l.input_node_id),
+      sourceHandle,
+      targetHandle,
       animated: active,
       selectable: true,
       reconnectable: true,
@@ -164,6 +189,10 @@ function savePositions(posMap) {
 function GraphCanvas() {
   const { graph, master, status, sendCommand } = useDaemon();
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [slotMap, setSlotMap] = useState(loadSlotMap);
+
+  // Persist slot map to localStorage whenever it changes
+  useEffect(() => { saveSlotMap(slotMap); }, [slotMap]);
 
   const handleSelect = useCallback((node) => {
     setSelectedNodeId((prev) => (prev === node.id ? null : node.id));
@@ -187,12 +216,49 @@ function GraphCanvas() {
     }
   }, [graph.nodes, selectedNodeId]);
 
-  const flowNodes = useMemo(
-    () => buildFlowNodes(graph.nodes, graph.links, handleSelect)
-            .map((n) => (n.id === String(selectedNodeId) ? { ...n, selected: true } : n)),
-    [graph.nodes, graph.links, handleSelect, selectedNodeId]
+  // String-keyed id → node lookup, used for slot sig computation
+  const nodesById = useMemo(() => {
+    const m = {};
+    graph.nodes.forEach((n) => { m[String(n.id)] = n; });
+    return m;
+  }, [graph.nodes]);
+
+  // Build flow nodes, then augment with sig-ordered link arrays for PillHandle
+  const flowNodes = useMemo(() => {
+    const base = buildFlowNodes(graph.nodes, graph.links, handleSelect)
+      .map((n) => (n.id === String(selectedNodeId) ? { ...n, selected: true } : n));
+
+    return base.map((n) => {
+      const node = nodesById[n.id];
+      if (!node) return n;
+      const sid = nodeStableId(node);
+
+      const augment = (links, side) => {
+        const withSig = links.map((l) => ({
+          ...l,
+          _sig: linkSig(
+            nodesById[String(l.output_node_id)] ? nodeStableId(nodesById[String(l.output_node_id)]) : String(l.output_node_id),
+            nodesById[String(l.input_node_id)]  ? nodeStableId(nodesById[String(l.input_node_id)])  : String(l.input_node_id),
+          ),
+        }));
+        return applySlotOrder(withSig, slotMap[pillKey(sid, side)] || []);
+      };
+
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          incomingLinksOrdered: augment(n.data.incomingLinks, "input"),
+          outgoingLinksOrdered: augment(n.data.outgoingLinks, "output"),
+        },
+      };
+    });
+  }, [graph.nodes, graph.links, handleSelect, selectedNodeId, slotMap, nodesById]);
+
+  const flowEdges = useMemo(
+    () => buildFlowEdges(graph.links, nodesById),
+    [graph.links, nodesById]
   );
-  const flowEdges = useMemo(() => buildFlowEdges(graph.links), [graph.links]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
@@ -231,6 +297,16 @@ function GraphCanvas() {
     [onNodesChange]
   );
 
+  // Helper: compute sig from two string node IDs
+  const getSig = useCallback(
+    (srcId, dstId) =>
+      linkSig(
+        nodesById[srcId] ? nodeStableId(nodesById[srcId]) : srcId,
+        nodesById[dstId] ? nodeStableId(nodesById[dstId]) : dstId,
+      ),
+    [nodesById]
+  );
+
   // Create a PipeWire link when user draws an edge
   const onConnect = useCallback(
     (connection) => {
@@ -239,12 +315,51 @@ function GraphCanvas() {
         output_node_id: parseInt(connection.source),
         input_node_id: parseInt(connection.target),
       });
-      // Show edge immediately; PipeWire event will replace it with the real one
+
+      const sig = getSig(connection.source, connection.target);
+      const outNode = nodesById[connection.source];
+      const inNode  = nodesById[connection.target];
+
+      setSlotMap((prev) => {
+        const next = { ...prev };
+
+        // Source output side: add-top → prepend, everything else → append
+        if (outNode) {
+          const k = pillKey(nodeStableId(outNode), "output");
+          next[k] = connection.sourceHandle === "add-top"
+            ? insertAt(prev[k], sig, 0)
+            : appendSig(prev[k], sig);
+        }
+
+        // Target input side: add-top → prepend, slot-X → insert before X, else → append
+        if (inNode) {
+          const k = pillKey(nodeStableId(inNode), "input");
+          const cur = next[k] || [];
+          if (connection.targetHandle === "add-top") {
+            next[k] = insertAt(cur, sig, 0);
+          } else if (connection.targetHandle?.startsWith("slot-")) {
+            const existingSig = connection.targetHandle.slice(5);
+            const idx = cur.indexOf(existingSig);
+            next[k] = insertAt(cur, sig, idx >= 0 ? idx : cur.length);
+          } else {
+            next[k] = appendSig(cur, sig);
+          }
+        }
+
+        return next;
+      });
+
+      // Optimistic edge — clear handle IDs (add-* handles are transient)
       setEdges((eds) =>
-        addEdge({ ...connection, style: { stroke: "#888", strokeWidth: 1 } }, eds)
+        addEdge({
+          ...connection,
+          sourceHandle: null,
+          targetHandle: null,
+          style: { stroke: "#888", strokeWidth: 1 },
+        }, eds)
       );
     },
-    [sendCommand, setEdges]
+    [sendCommand, setEdges, getSig, nodesById, setSlotMap]
   );
 
   // Delete a PipeWire link when user removes an edge (select + Delete key)
@@ -252,10 +367,25 @@ function GraphCanvas() {
     (changes) => {
       changes
         .filter((c) => c.type === "remove")
-        .forEach((c) => sendCommand({ cmd: "unlink_nodes", link_id: parseInt(c.id) }));
+        .forEach((c) => {
+          sendCommand({ cmd: "unlink_nodes", link_id: parseInt(c.id) });
+          // Remove sig from slot map
+          const edge = edges.find((e) => e.id === c.id);
+          if (edge?.sourceHandle?.startsWith("slot-")) {
+            const sig = edge.sourceHandle.slice(5);
+            const outNode = nodesById[edge.source];
+            const inNode  = nodesById[edge.target];
+            setSlotMap((prev) => {
+              const next = { ...prev };
+              if (outNode) next[pillKey(nodeStableId(outNode), "output")] = removeSig(prev[pillKey(nodeStableId(outNode), "output")], sig);
+              if (inNode)  next[pillKey(nodeStableId(inNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(inNode),  "input")],  sig);
+              return next;
+            });
+          }
+        });
       onEdgesChange(changes);
     },
-    [onEdgesChange, sendCommand]
+    [onEdgesChange, sendCommand, edges, nodesById, setSlotMap]
   );
 
   // ── Edge reconnection (drag an existing edge endpoint to a new target) ──
@@ -286,11 +416,48 @@ function GraphCanvas() {
         output_node_id: parseInt(newConnection.source),
         input_node_id: parseInt(newConnection.target),
       });
+
+      const oldSig = oldEdge.sourceHandle?.startsWith("slot-") ? oldEdge.sourceHandle.slice(5) : null;
+      const newSig = getSig(newConnection.source, newConnection.target);
+      const oldOutNode = nodesById[oldEdge.source];
+      const oldInNode  = nodesById[oldEdge.target];
+      const newOutNode = nodesById[newConnection.source];
+      const newInNode  = nodesById[newConnection.target];
+
+      setSlotMap((prev) => {
+        const next = { ...prev };
+        // Remove old sig from old source/target pills
+        if (oldSig) {
+          if (oldOutNode) next[pillKey(nodeStableId(oldOutNode), "output")] = removeSig(prev[pillKey(nodeStableId(oldOutNode), "output")], oldSig);
+          if (oldInNode)  next[pillKey(nodeStableId(oldInNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(oldInNode),  "input")],  oldSig);
+        }
+        // Add new sig to new source output
+        if (newOutNode) {
+          const k = pillKey(nodeStableId(newOutNode), "output");
+          next[k] = appendSig(next[k] || [], newSig);
+        }
+        // Add new sig to new target input (respecting drop position)
+        if (newInNode) {
+          const k = pillKey(nodeStableId(newInNode), "input");
+          const cur = next[k] || [];
+          if (newConnection.targetHandle === "add-top") {
+            next[k] = insertAt(cur, newSig, 0);
+          } else if (newConnection.targetHandle?.startsWith("slot-")) {
+            const existingSig = newConnection.targetHandle.slice(5);
+            const idx = cur.indexOf(existingSig);
+            next[k] = insertAt(cur, newSig, idx >= 0 ? idx : cur.length);
+          } else {
+            next[k] = appendSig(cur, newSig);
+          }
+        }
+        return next;
+      });
+
       // Optimistic local update: remove the old edge so UI reflects the
       // intent immediately. The new edge will arrive via WS.
       setEdges((eds) => eds.filter((e) => e.id !== oldEdge.id));
     },
-    [sendCommand, setEdges]
+    [sendCommand, setEdges, getSig, nodesById, setSlotMap]
   );
 
   const onReconnectEnd = useCallback(
@@ -299,9 +466,21 @@ function GraphCanvas() {
         // Dropped on empty canvas — delete the edge
         sendCommand({ cmd: "unlink_nodes", link_id: parseInt(edge.id) });
         setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+        // Remove sig from slot map
+        const sig = edge.sourceHandle?.startsWith("slot-") ? edge.sourceHandle.slice(5) : null;
+        if (sig) {
+          const outNode = nodesById[edge.source];
+          const inNode  = nodesById[edge.target];
+          setSlotMap((prev) => {
+            const next = { ...prev };
+            if (outNode) next[pillKey(nodeStableId(outNode), "output")] = removeSig(prev[pillKey(nodeStableId(outNode), "output")], sig);
+            if (inNode)  next[pillKey(nodeStableId(inNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(inNode),  "input")],  sig);
+            return next;
+          });
+        }
       }
     },
-    [sendCommand, setEdges]
+    [sendCommand, setEdges, nodesById, setSlotMap]
   );
 
   const selectedNode = useMemo(

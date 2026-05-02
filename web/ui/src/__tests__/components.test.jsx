@@ -6,8 +6,15 @@ import { MasterPanel } from "../components/MasterPanel.jsx";
 
 // React Flow Handle is a no-op in test env (no canvas layout)
 vi.mock("@xyflow/react", () => ({
-  Handle: ({ type, position, style }) => (
-    <div data-testid={`handle-${type}`} data-position={position} style={style} />
+  Handle: ({ type, position, style, id, "data-testid": testId, children }) => (
+    <div
+      data-testid={testId ?? `handle-${type}`}
+      data-id={id}
+      data-position={position}
+      style={style}
+    >
+      {children}
+    </div>
   ),
   Position: { Left: "left", Right: "right" },
 }));
@@ -91,15 +98,13 @@ describe("NodeBlock", () => {
 // ── PillHandle ───────────────────────────────────────────────────────────────
 
 describe("PillHandle", () => {
-  it("renders a single segment when no links", () => {
-    const { container } = render(<PillHandle side="input" links={[]} />);
-    // No segment divs rendered (only the + placeholder)
-    const segments = container.querySelectorAll("[style*='4ade80'], [style*='4a4a60']");
-    expect(segments.length).toBe(0);
+  it("renders no pill-segment handles and shows + when no links", () => {
+    const { container, queryAllByTestId } = render(<PillHandle side="input" links={[]} />);
+    expect(queryAllByTestId("pill-segment")).toHaveLength(0);
     expect(container.textContent).toContain("+");
   });
 
-  it("renders one segment div per link", () => {
+  it("renders one Handle per link with pill-segment testid", () => {
     const links = [
       { id: 1, state: "active" },
       { id: 2, state: "paused" },
@@ -109,14 +114,15 @@ describe("PillHandle", () => {
     expect(getAllByTestId("pill-segment")).toHaveLength(3);
   });
 
-  it("renders a React Flow handle for target when side=input", () => {
-    render(<PillHandle side="input" links={[]} />);
-    expect(screen.getByTestId("handle-target")).toBeTruthy();
+  it("renders a React Flow handle for target when side=input (no links)", () => {
+    const { getAllByTestId } = render(<PillHandle side="input" links={[]} />);
+    // With 0 links, only the anonymous handle renders (testid falls back to handle-target)
+    expect(getAllByTestId("handle-target")).toHaveLength(1);
   });
 
-  it("renders a React Flow handle for source when side=output", () => {
-    render(<PillHandle side="output" links={[]} />);
-    expect(screen.getByTestId("handle-source")).toBeTruthy();
+  it("renders a React Flow handle for source when side=output (no links)", () => {
+    const { getAllByTestId } = render(<PillHandle side="output" links={[]} />);
+    expect(getAllByTestId("handle-source")).toHaveLength(1);
   });
 
   it("pill height grows with number of links", () => {
