@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { normalizeLink, normalizeNode } from "../hooks/useDaemon.js";
 import { buildFlowEdges, isNodeActive } from "../App.jsx";
+import { slotHandleId, sortedSlots } from "../utils/slots.js";
 
 // ── normalizeLink ────────────────────────────────────────────────────────────
 
@@ -166,5 +167,74 @@ describe("isNodeActive", () => {
     const node = makeNode(2, true);
     const links = [makeLink(1, 2, "active")];
     expect(isNodeActive(node, links)).toBe(true);
+  });
+});
+
+// ── slot ordering ────────────────────────────────────────────────────────────
+
+describe("slotHandleId", () => {
+  it("uses 'in-<id>' for the input side", () => {
+    expect(slotHandleId({ id: 42 }, "in")).toBe("in-42");
+  });
+  it("uses 'out-<id>' for the output side", () => {
+    expect(slotHandleId({ id: 7 }, "out")).toBe("out-7");
+  });
+});
+
+describe("sortedSlots", () => {
+  it("sorts incoming side by output_node_id (peer) then link id", () => {
+    const links = [
+      { id: 100, output_node_id: 5, input_node_id: 999 },
+      { id: 200, output_node_id: 1, input_node_id: 999 },
+      { id: 50, output_node_id: 5, input_node_id: 999 }, // same peer as id=100
+    ];
+    const out = sortedSlots(links, "in");
+    expect(out.map((l) => l.id)).toEqual([200, 50, 100]);
+    // peer 1 first, then peer 5 (id 50 before id 100 within the same peer)
+  });
+
+  it("sorts outgoing side by input_node_id (peer) then link id", () => {
+    const links = [
+      { id: 100, output_node_id: 999, input_node_id: 5 },
+      { id: 200, output_node_id: 999, input_node_id: 1 },
+    ];
+    const out = sortedSlots(links, "out");
+    expect(out.map((l) => l.id)).toEqual([200, 100]);
+  });
+
+  it("returns a new array (does not mutate input)", () => {
+    const links = [
+      { id: 100, output_node_id: 5, input_node_id: 999 },
+      { id: 200, output_node_id: 1, input_node_id: 999 },
+    ];
+    const original = [...links];
+    sortedSlots(links, "in");
+    expect(links).toEqual(original);
+  });
+
+  it("handles empty input", () => {
+    expect(sortedSlots([], "in")).toEqual([]);
+  });
+
+  it("is stable across re-sorts (deterministic)", () => {
+    const links = [
+      { id: 9, output_node_id: 3, input_node_id: 999 },
+      { id: 8, output_node_id: 3, input_node_id: 999 },
+      { id: 7, output_node_id: 2, input_node_id: 999 },
+    ];
+    const a = sortedSlots(links, "in").map((l) => l.id);
+    const b = sortedSlots([...links].reverse(), "in").map((l) => l.id);
+    expect(a).toEqual(b);
+  });
+});
+
+// ── buildFlowEdges sets sourceHandle/targetHandle ────────────────────────────
+
+describe("buildFlowEdges (per-slot handle ids)", () => {
+  it("sets sourceHandle and targetHandle to slotHandleId values", () => {
+    const links = [{ id: 42, output_node_id: 10, input_node_id: 20, state: "active" }];
+    const [edge] = buildFlowEdges(links);
+    expect(edge.sourceHandle).toBe("out-42");
+    expect(edge.targetHandle).toBe("in-42");
   });
 });

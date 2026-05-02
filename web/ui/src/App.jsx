@@ -15,6 +15,7 @@ import { DiagDrawer } from "./components/DiagDrawer.jsx";
 import { MasterPanel } from "./components/MasterPanel.jsx";
 import { NodeBlock } from "./components/NodeBlock.jsx";
 import { useDaemon } from "./hooks/useDaemon.js";
+import { slotHandleId } from "./utils/slots.js";
 
 const NODE_TYPES = { pwNode: NodeBlock };
 const NODE_WIDTH  = 220;
@@ -137,6 +138,10 @@ export function buildFlowEdges(links) {
       id: String(l.id),
       source: String(l.output_node_id),
       target: String(l.input_node_id),
+      // Pin curves to per-slot Handles on the pill, not the pill centre.
+      // PillHandle renders Handles with these exact ids (see utils/slots.js).
+      sourceHandle: slotHandleId(l, "out"),
+      targetHandle: slotHandleId(l, "in"),
       animated: active,
       selectable: true,
       reconnectable: true,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PillHandle } from "./PillHandle.jsx";
 
 const CLASS_COLORS = {
@@ -8,8 +8,53 @@ const CLASS_COLORS = {
   "Stream/Output/Audio": "#7a4b2d",
 };
 
+const PROXIMITY_PX = 60;
+
+/**
+ * Distance from point (x,y) to the nearest edge of rect r.  Returns 0 if
+ * (x,y) is inside r.  Used for the per-pill proximity-hover trigger.
+ */
+function distanceToRect(x, y, r) {
+  if (!r) return Infinity;
+  const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+  const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+  return Math.hypot(dx, dy);
+}
+
 export function NodeBlock({ data, selected }) {
   const [hover, setHover] = useState(false);
+  // Per-side proximity hover state — drives PillHandle's `expanded` prop.
+  const [pillExpanded, setPillExpanded] = useState({ in: false, out: false });
+
+  const inWrapRef = useRef(null);
+  const outWrapRef = useRef(null);
+
+  // Drive pill expansion via a window-level mousemove distance check on the
+  // pill's bounding rect.  We don't use a 60px transparent overlay around
+  // the pill because that would steal pointer events from edges and the
+  // canvas pan area.  The check is cheap (O(1) per pill, two sqrt calls).
+  useEffect(() => {
+    const onMove = (e) => {
+      const inDist = distanceToRect(
+        e.clientX,
+        e.clientY,
+        inWrapRef.current?.getBoundingClientRect()
+      );
+      const outDist = distanceToRect(
+        e.clientX,
+        e.clientY,
+        outWrapRef.current?.getBoundingClientRect()
+      );
+      const newIn = inDist < PROXIMITY_PX;
+      const newOut = outDist < PROXIMITY_PX;
+      setPillExpanded((prev) =>
+        prev.in === newIn && prev.out === newOut ? prev : { in: newIn, out: newOut }
+      );
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, []);
+
   const { node } = data;
   const isRunning = node.is_running;
   const bg = CLASS_COLORS[node.media_class] || "#2a2a35";
@@ -62,7 +107,16 @@ export function NodeBlock({ data, selected }) {
         </div>
       )}
 
-      <PillHandle side="input" links={data.incomingLinks || []} />
+      {/* Wrappers exist purely so we can call getBoundingClientRect on the
+          pill itself for the proximity check.  PillHandle is absolutely
+          positioned inside this empty div. */}
+      <div ref={inWrapRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        <PillHandle
+          side="input"
+          links={data.incomingLinks || []}
+          expanded={pillExpanded.in}
+        />
+      </div>
 
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, color: isRunning ? "#4ade80" : "#ccc" }}>
         {node.description || node.name || `Node ${node.id}`}
@@ -99,7 +153,13 @@ export function NodeBlock({ data, selected }) {
         </div>
       )}
 
-      <PillHandle side="output" links={data.outgoingLinks || []} />
+      <div ref={outWrapRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+        <PillHandle
+          side="output"
+          links={data.outgoingLinks || []}
+          expanded={pillExpanded.out}
+        />
+      </div>
     </div>
   );
 }
