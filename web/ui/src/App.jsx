@@ -102,15 +102,27 @@ export function isNodeActive(node, links) {
   );
 }
 
+// Keep one link per (output_node_id, input_node_id) pair — highest id wins.
+// Mirrors buildFlowEdges dedup so pill slots and rendered edges always match 1:1.
+function dedupeLinksByPair(links) {
+  const seen = new Map();
+  for (const l of links) {
+    const key = `${l.output_node_id}-${l.input_node_id}`;
+    const prev = seen.get(key);
+    if (!prev || Number(l.id) > Number(prev.id)) seen.set(key, l);
+  }
+  return Array.from(seen.values());
+}
+
 function buildFlowNodes(graphNodes, graphLinks, onSelect) {
   const laid = autoLayout(graphNodes, graphLinks);
   return laid.map((n) => {
-    const incomingLinks = graphLinks.filter(
+    const incomingLinks = dedupeLinksByPair(graphLinks.filter(
       (l) => l.input_node_id === n.id && l.output_node_id != null
-    );
-    const outgoingLinks = graphLinks.filter(
+    ));
+    const outgoingLinks = dedupeLinksByPair(graphLinks.filter(
       (l) => l.output_node_id === n.id && l.input_node_id != null
-    );
+    ));
     return {
       id: String(n.id),
       type: "pwNode",
