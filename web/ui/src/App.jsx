@@ -203,6 +203,10 @@ function GraphCanvas() {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [slotMap, setSlotMap] = useState(loadSlotMap);
 
+  // Always-current ref to graph.links — used in onConnect to avoid stale closure issues
+  const graphLinksRef = useRef(graph.links);
+  useEffect(() => { graphLinksRef.current = graph.links; }, [graph.links]);
+
   // Persist slot map to localStorage whenever it changes
   useEffect(() => { saveSlotMap(slotMap); }, [slotMap]);
 
@@ -321,43 +325,41 @@ function GraphCanvas() {
 
   // Create a PipeWire link when user draws an edge (or reroute an existing one).
   //
-  // ReactFlow fires onConnect (not onReconnect) when the user drags from a slot
-  // Handle because the node layer sits above the SVG edge layer, hiding the edge's
-  // reconnect endpoint. We detect drag-from-slot via sourceHandle and convert it
-  // into a reroute: delete the old link, create the new one.
+  // When the user drags from a slot Handle (id="slot-<sig>"), sourceHandle starts
+  // with "slot-". We look up the existing PipeWire link via graphLinksRef (always
+  // current, avoids stale-closure issues with the `edges` React state) and reroute.
   const onConnect = useCallback(
     (connection) => {
-      console.log("[onConnect]", JSON.stringify({ src: connection.source, srcH: connection.sourceHandle, dst: connection.target, dstH: connection.targetHandle }));
-      console.log("[onConnect] edges sourceHandles:", edges.map(e => `${e.id}:${e.sourceHandle}`));
       // ── Reroute: drag started from an existing connection's slot handle ──
       if (connection.sourceHandle?.startsWith("slot-")) {
-        const oldEdge = edges.find(
-          (e) =>
-            e.sourceHandle === connection.sourceHandle &&
-            String(e.source) === String(connection.source)
-        );
-        if (oldEdge) {
+        const sig = connection.sourceHandle.slice(5);
+        const matchingLink = graphLinksRef.current.find((l) => {
+          const outNode = nodesById[String(l.output_node_id)];
+          const inNode  = nodesById[String(l.input_node_id)];
+          return outNode && inNode &&
+            linkSig(nodeStableId(outNode), nodeStableId(inNode)) === sig;
+        });
+        if (matchingLink) {
           // No-op: dropped back on the same target
-          if (String(oldEdge.target) === String(connection.target)) return;
+          if (matchingLink.input_node_id === parseInt(connection.target)) return;
 
-          sendCommand({ cmd: "unlink_nodes", link_id: parseInt(oldEdge.id) });
+          sendCommand({ cmd: "unlink_nodes", link_id: matchingLink.id });
           sendCommand({
             cmd: "link_nodes",
             output_node_id: parseInt(connection.source),
             input_node_id: parseInt(connection.target),
           });
 
-          const oldSig = oldEdge.sourceHandle.slice(5);
           const newSig = getSig(connection.source, connection.target);
-          const oldOutNode = nodesById[String(oldEdge.source)];
-          const oldInNode  = nodesById[String(oldEdge.target)];
+          const oldOutNode = nodesById[String(matchingLink.output_node_id)];
+          const oldInNode  = nodesById[String(matchingLink.input_node_id)];
           const newOutNode = nodesById[String(connection.source)];
           const newInNode  = nodesById[String(connection.target)];
 
           setSlotMap((prev) => {
             const next = { ...prev };
-            if (oldOutNode) next[pillKey(nodeStableId(oldOutNode), "output")] = removeSig(prev[pillKey(nodeStableId(oldOutNode), "output")], oldSig);
-            if (oldInNode)  next[pillKey(nodeStableId(oldInNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(oldInNode),  "input")],  oldSig);
+            if (oldOutNode) next[pillKey(nodeStableId(oldOutNode), "output")] = removeSig(prev[pillKey(nodeStableId(oldOutNode), "output")], sig);
+            if (oldInNode)  next[pillKey(nodeStableId(oldInNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(oldInNode),  "input")],  sig);
             if (newOutNode) {
               const k = pillKey(nodeStableId(newOutNode), "output");
               next[k] = appendSig(next[k] || [], newSig);
@@ -378,7 +380,7 @@ function GraphCanvas() {
             return next;
           });
 
-          setEdges((eds) => eds.filter((e) => e.id !== oldEdge.id));
+          setEdges((eds) => eds.filter((e) => e.id !== String(matchingLink.id)));
           return;
         }
       }
@@ -433,7 +435,7 @@ function GraphCanvas() {
         }, eds)
       );
     },
-    [sendCommand, setEdges, getSig, nodesById, setSlotMap, edges]
+    [sendCommand, setEdges, getSig, nodesById, setSlotMap, graphLinksRef]
   );
 
   // Delete a PipeWire link when user removes an edge (select + Delete key)
