@@ -327,6 +327,8 @@ function GraphCanvas() {
   // into a reroute: delete the old link, create the new one.
   const onConnect = useCallback(
     (connection) => {
+      console.log("[onConnect]", JSON.stringify({ src: connection.source, srcH: connection.sourceHandle, dst: connection.target, dstH: connection.targetHandle }));
+      console.log("[onConnect] edges sourceHandles:", edges.map(e => `${e.id}:${e.sourceHandle}`));
       // ── Reroute: drag started from an existing connection's slot handle ──
       if (connection.sourceHandle?.startsWith("slot-")) {
         const oldEdge = edges.find(
