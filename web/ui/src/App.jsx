@@ -319,9 +319,69 @@ function GraphCanvas() {
     [nodesById]
   );
 
-  // Create a PipeWire link when user draws an edge
+  // Create a PipeWire link when user draws an edge (or reroute an existing one).
+  //
+  // ReactFlow fires onConnect (not onReconnect) when the user drags from a slot
+  // Handle because the node layer sits above the SVG edge layer, hiding the edge's
+  // reconnect endpoint. We detect drag-from-slot via sourceHandle and convert it
+  // into a reroute: delete the old link, create the new one.
   const onConnect = useCallback(
     (connection) => {
+      // ── Reroute: drag started from an existing connection's slot handle ──
+      if (connection.sourceHandle?.startsWith("slot-")) {
+        const oldEdge = edges.find(
+          (e) =>
+            e.sourceHandle === connection.sourceHandle &&
+            String(e.source) === String(connection.source)
+        );
+        if (oldEdge) {
+          // No-op: dropped back on the same target
+          if (String(oldEdge.target) === String(connection.target)) return;
+
+          sendCommand({ cmd: "unlink_nodes", link_id: parseInt(oldEdge.id) });
+          sendCommand({
+            cmd: "link_nodes",
+            output_node_id: parseInt(connection.source),
+            input_node_id: parseInt(connection.target),
+          });
+
+          const oldSig = oldEdge.sourceHandle.slice(5);
+          const newSig = getSig(connection.source, connection.target);
+          const oldOutNode = nodesById[String(oldEdge.source)];
+          const oldInNode  = nodesById[String(oldEdge.target)];
+          const newOutNode = nodesById[String(connection.source)];
+          const newInNode  = nodesById[String(connection.target)];
+
+          setSlotMap((prev) => {
+            const next = { ...prev };
+            if (oldOutNode) next[pillKey(nodeStableId(oldOutNode), "output")] = removeSig(prev[pillKey(nodeStableId(oldOutNode), "output")], oldSig);
+            if (oldInNode)  next[pillKey(nodeStableId(oldInNode),  "input")]  = removeSig(prev[pillKey(nodeStableId(oldInNode),  "input")],  oldSig);
+            if (newOutNode) {
+              const k = pillKey(nodeStableId(newOutNode), "output");
+              next[k] = appendSig(next[k] || [], newSig);
+            }
+            if (newInNode) {
+              const k = pillKey(nodeStableId(newInNode), "input");
+              const cur = next[k] || [];
+              if (connection.targetHandle === "add-top") {
+                next[k] = insertAt(cur, newSig, 0);
+              } else if (connection.targetHandle?.startsWith("slot-")) {
+                const existingSig = connection.targetHandle.slice(5);
+                const idx = cur.indexOf(existingSig);
+                next[k] = insertAt(cur, newSig, idx >= 0 ? idx : cur.length);
+              } else {
+                next[k] = appendSig(cur, newSig);
+              }
+            }
+            return next;
+          });
+
+          setEdges((eds) => eds.filter((e) => e.id !== oldEdge.id));
+          return;
+        }
+      }
+
+      // ── New connection: drag from add-top / add-bot / anon handle ──
       sendCommand({
         cmd: "link_nodes",
         output_node_id: parseInt(connection.source),
@@ -371,7 +431,7 @@ function GraphCanvas() {
         }, eds)
       );
     },
-    [sendCommand, setEdges, getSig, nodesById, setSlotMap]
+    [sendCommand, setEdges, getSig, nodesById, setSlotMap, edges]
   );
 
   // Delete a PipeWire link when user removes an edge (select + Delete key)
