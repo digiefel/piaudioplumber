@@ -117,27 +117,38 @@ function buildFlowNodes(graphNodes, graphLinks, onSelect) {
 }
 
 export function buildFlowEdges(links) {
-  return links
-    .filter((l) => l.output_node_id != null && l.input_node_id != null)
-    .map((l) => {
-      const active = l.state === "active";
-      // Normalise the state label — strip prefix like "LinkState." for display
-      const stateLabel = l.state ? String(l.state).replace(/^.*\./, "") : "";
-      return {
-        id: String(l.id),
-        source: String(l.output_node_id),
-        target: String(l.input_node_id),
-        animated: active,
-        selectable: true,
-        style: {
-          stroke: active ? "#4ade80" : "#888",
-          strokeWidth: 2,
-        },
-        label: active ? "" : stateLabel,
-        labelStyle: { fill: "#888", fontSize: 10 },
-        labelBgStyle: { fill: "#0f0f11", fillOpacity: 0.8 },
-      };
-    });
+  // Dedupe by (source, target) pair so optimistic-deleted + echoed-readded
+  // edges from a reroute don't double-render briefly. Keep the edge with the
+  // higher numeric id (PipeWire IDs are monotonic, so newer wins).
+  const filtered = links.filter(
+    (l) => l.output_node_id != null && l.input_node_id != null
+  );
+  const seen = new Map(); // key = `${out}-${in}` → link
+  for (const l of filtered) {
+    const key = `${l.output_node_id}-${l.input_node_id}`;
+    const prev = seen.get(key);
+    if (!prev || Number(l.id) > Number(prev.id)) seen.set(key, l);
+  }
+  return Array.from(seen.values()).map((l) => {
+    const active = l.state === "active";
+    // Normalise the state label — strip prefix like "LinkState." for display
+    const stateLabel = l.state ? String(l.state).replace(/^.*\./, "") : "";
+    return {
+      id: String(l.id),
+      source: String(l.output_node_id),
+      target: String(l.input_node_id),
+      animated: active,
+      selectable: true,
+      reconnectable: true,
+      style: {
+        stroke: active ? "#4ade80" : "#888",
+        strokeWidth: 2,
+      },
+      label: active ? "" : stateLabel,
+      labelStyle: { fill: "#888", fontSize: 10 },
+      labelBgStyle: { fill: "#0f0f11", fillOpacity: 0.8 },
+    };
+  });
 }
 
 function loadSavedPositions() {
@@ -247,6 +258,52 @@ function GraphCanvas() {
     [onEdgesChange, sendCommand]
   );
 
+  // ── Edge reconnection (drag an existing edge endpoint to a new target) ──
+  // ReactFlow idiom: track success across Start/End so we can detect
+  // "drop on canvas" (no successful onReconnect fired) and delete the edge.
+  const edgeReconnectSuccess = useRef(false);
+
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccess.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      edgeReconnectSuccess.current = true;
+      // If user dropped onto the same source/target pair, no-op
+      if (
+        String(oldEdge.source) === String(newConnection.source) &&
+        String(oldEdge.target) === String(newConnection.target)
+      ) {
+        return;
+      }
+      // Delete the old PipeWire link, create the new one. PipeWire will echo
+      // both as object_removed/object_added; the dedupe in buildFlowEdges
+      // handles the brief window where both old and new might coexist.
+      sendCommand({ cmd: "unlink_nodes", link_id: parseInt(oldEdge.id) });
+      sendCommand({
+        cmd: "link_nodes",
+        output_node_id: parseInt(newConnection.source),
+        input_node_id: parseInt(newConnection.target),
+      });
+      // Optimistic local update: remove the old edge so UI reflects the
+      // intent immediately. The new edge will arrive via WS.
+      setEdges((eds) => eds.filter((e) => e.id !== oldEdge.id));
+    },
+    [sendCommand, setEdges]
+  );
+
+  const onReconnectEnd = useCallback(
+    (_, edge) => {
+      if (!edgeReconnectSuccess.current) {
+        // Dropped on empty canvas — delete the edge
+        sendCommand({ cmd: "unlink_nodes", link_id: parseInt(edge.id) });
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+    },
+    [sendCommand, setEdges]
+  );
+
   const selectedNode = useMemo(
     () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
     [graph.nodes, selectedNodeId]
@@ -281,6 +338,9 @@ function GraphCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
+        onReconnect={onReconnect}
+        onReconnectStart={onReconnectStart}
+        onReconnectEnd={onReconnectEnd}
         onPaneClick={() => setSelectedNodeId(null)}
         nodeTypes={NODE_TYPES}
         deleteKeyCode={["Backspace", "Delete"]}

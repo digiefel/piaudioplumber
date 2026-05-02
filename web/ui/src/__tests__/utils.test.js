@@ -109,6 +109,33 @@ describe("buildFlowEdges", () => {
     expect(isNaN(Number(edge.source))).toBe(false);
     expect(isNaN(Number(edge.target))).toBe(false);
   });
+
+  it("marks every edge reconnectable", () => {
+    const links = [{ id: 1, output_node_id: 10, input_node_id: 20, state: "active" }];
+    const [edge] = buildFlowEdges(links);
+    expect(edge.reconnectable).toBe(true);
+  });
+
+  it("dedupes by (source,target) pair, keeping the higher link id", () => {
+    // Simulates the optimistic-delete + WS-echo race: old link 5 and new link 9
+    // briefly coexist for the same A->B pair. Render only the newer one.
+    const links = [
+      { id: 5, output_node_id: 10, input_node_id: 20, state: "active" },
+      { id: 9, output_node_id: 10, input_node_id: 20, state: "paused" },
+    ];
+    const edges = buildFlowEdges(links);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].id).toBe("9");
+  });
+
+  it("does not dedupe distinct pairs", () => {
+    const links = [
+      { id: 1, output_node_id: 10, input_node_id: 20, state: "active" },
+      { id: 2, output_node_id: 10, input_node_id: 30, state: "active" },
+      { id: 3, output_node_id: 11, input_node_id: 20, state: "active" },
+    ];
+    expect(buildFlowEdges(links)).toHaveLength(3);
+  });
 });
 
 // ── isNodeActive ─────────────────────────────────────────────────────────────
